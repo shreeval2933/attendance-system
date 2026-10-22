@@ -429,32 +429,198 @@ function downloadSubmissionsCSV() {
   showToast("CSV downloaded successfully!");
 }
 
+// ==========================================================================
+// Admin Security Gate Logic (Master PIN & Immediate Auth)
+// ==========================================================================
+const DEFAULT_MASTER_PIN = "2933";
+
+function getStoredAdminPin() {
+  return localStorage.getItem("attendance_admin_secret_pin") || DEFAULT_MASTER_PIN;
+}
+
+function verifyAdminPin(entered) {
+  if (!entered) return false;
+  const clean = String(entered).trim();
+  const custom = (localStorage.getItem("attendance_admin_secret_pin") || "").trim();
+  // Master PIN 2933 ALWAYS unlocks, as does any custom user-configured PIN
+  return clean === DEFAULT_MASTER_PIN || (custom.length > 0 && clean === custom);
+}
+
+function unlockDashboard() {
+  sessionStorage.setItem("admin_authenticated", "true");
+  const lockScreen = document.getElementById("adminLockScreen");
+  const mainContent = document.getElementById("adminMainContent");
+  const lockError = document.getElementById("adminLockError");
+  const pinInput = document.getElementById("adminPinInput");
+
+  if (lockScreen) lockScreen.style.setProperty("display", "none", "important");
+  if (mainContent) mainContent.style.setProperty("display", "block", "important");
+  if (lockError) lockError.style.display = "none";
+  if (pinInput) pinInput.value = "";
+
+  if (map) {
+    setTimeout(() => {
+      try {
+        map.invalidateSize();
+      } catch (err) {
+        console.warn("Map resize warning:", err);
+      }
+    }, 150);
+  }
+}
+
+function lockDashboard() {
+  sessionStorage.removeItem("admin_authenticated");
+  const lockScreen = document.getElementById("adminLockScreen");
+  const mainContent = document.getElementById("adminMainContent");
+  const lockError = document.getElementById("adminLockError");
+  const pinInput = document.getElementById("adminPinInput");
+
+  if (lockScreen) lockScreen.style.setProperty("display", "flex", "important");
+  if (mainContent) mainContent.style.setProperty("display", "none", "important");
+  if (lockError) lockError.style.display = "none";
+  if (pinInput) {
+    pinInput.value = "";
+    setTimeout(() => pinInput.focus(), 60);
+  }
+}
+
 // Event Bindings
-document.addEventListener("DOMContentLoaded", async () => {
-  initMap();
+document.addEventListener("DOMContentLoaded", () => {
+  // 1. Immediately Bind & Execute Security Lock Screen
+  const lockScreen = document.getElementById("adminLockScreen");
+  const mainContent = document.getElementById("adminMainContent");
+  const lockForm = document.getElementById("adminLockForm");
+  const pinInput = document.getElementById("adminPinInput");
+  const lockError = document.getElementById("adminLockError");
+  const lockGoogleBtn = document.getElementById("lockGoogleBtn");
+  const lockDashboardBtn = document.getElementById("lockDashboardBtn");
+  const updateAdminPinBtn = document.getElementById("updateAdminPinBtn");
+  const newAdminPinInput = document.getElementById("newAdminPinInput");
+
+  function handleUnlockAttempt() {
+    const entered = pinInput ? pinInput.value : "";
+    if (verifyAdminPin(entered)) {
+      unlockDashboard();
+      showToast("Access Granted. Welcome, Teacher!");
+    } else {
+      if (lockError) lockError.style.display = "block";
+      if (pinInput) {
+        pinInput.value = "";
+        pinInput.focus();
+      }
+      showToast("Incorrect PIN. Please try again.");
+    }
+  }
+
+  if (lockForm) {
+    lockForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleUnlockAttempt();
+      return false;
+    });
+  }
+
+  if (pinInput) {
+    pinInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        handleUnlockAttempt();
+      }
+    });
+  }
+
+  // Check state on load
+  if (sessionStorage.getItem("admin_authenticated") === "true") {
+    unlockDashboard();
+  } else {
+    lockDashboard();
+  }
+
+  // Google sign in on lock screen
+  if (lockGoogleBtn) {
+    lockGoogleBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      if (window.AttendanceDB && window.AttendanceDB.isConfigured() && typeof firebase !== "undefined" && firebase.auth) {
+        try {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          const result = await firebase.auth().signInWithPopup(provider);
+          const teacherEmailBadge = document.getElementById("teacherEmailBadge");
+          const authBtnText = document.getElementById("authBtnText");
+          if (teacherEmailBadge) teacherEmailBadge.textContent = result.user.email;
+          if (authBtnText) authBtnText.textContent = "Sign Out";
+          unlockDashboard();
+          showToast(`Logged in as ${result.user.email}`);
+        } catch (err) {
+          console.error("Google lock sign-in error:", err);
+          alert("Google Sign-In: " + err.message);
+        }
+      } else {
+        alert("Demo Mode: Enter Master PIN '2933' to unlock.");
+        if (pinInput) pinInput.focus();
+      }
+    });
+  }
+
+  if (lockDashboardBtn) {
+    lockDashboardBtn.addEventListener("click", () => {
+      lockDashboard();
+      showToast("Dashboard locked.");
+    });
+  }
+
+  if (updateAdminPinBtn) {
+    updateAdminPinBtn.addEventListener("click", () => {
+      const newPin = newAdminPinInput ? newAdminPinInput.value.trim() : "";
+      if (!newPin || newPin.length < 4) {
+        alert("Please enter a valid PIN of at least 4 characters.");
+        return;
+      }
+      localStorage.setItem("attendance_admin_secret_pin", newPin);
+      if (newAdminPinInput) newAdminPinInput.value = "";
+      showToast("Admin Secret PIN successfully updated!");
+    });
+  }
+
+  // 2. Initialize Dashboard Components Safely
+  try {
+    initMap();
+  } catch (err) {
+    console.error("Map initialization failed:", err);
+  }
 
   // Mode badge update
   const modeBadge = document.getElementById("firebaseModeBadge");
-  if (window.AttendanceDB.isConfigured()) {
-    modeBadge.textContent = "Firebase Live";
-    modeBadge.style.background = "#dcfce7";
-    modeBadge.style.color = "#15803d";
-    modeBadge.style.borderColor = "#86efac";
-  } else {
-    modeBadge.textContent = "Local Multi-Tab Sync";
+  if (modeBadge) {
+    if (window.AttendanceDB && window.AttendanceDB.isConfigured()) {
+      modeBadge.textContent = "Firebase Live";
+      modeBadge.style.background = "#dcfce7";
+      modeBadge.style.color = "#15803d";
+      modeBadge.style.borderColor = "#86efac";
+    } else {
+      modeBadge.textContent = "Local Multi-Tab Sync";
+    }
   }
 
-  // Load initial session
-  await loadSessionData(currentSessionName);
+  // Load initial session asynchronously (non-blocking)
+  loadSessionData(currentSessionName).catch((err) => {
+    console.error("Error loading initial session:", err);
+  });
 
   // Toggle collapsible location enforcement
   const toggleBtn = document.getElementById("toggleGeoEnforcement");
   const toggleArrow = document.getElementById("toggleArrow");
   const geoContent = document.getElementById("geoEnforcementContent");
-  toggleBtn.addEventListener("click", () => {
-    geoContent.classList.toggle("open");
-    toggleArrow.textContent = geoContent.classList.contains("open") ? "▼" : "▶";
-  });
+  if (toggleBtn && geoContent) {
+    toggleBtn.addEventListener("click", () => {
+      geoContent.classList.toggle("open");
+      if (toggleArrow) {
+        toggleArrow.textContent = geoContent.classList.contains("open") ? "▼" : "▶";
+      }
+    });
+  }
 
   // Action Button: Save session
   document.getElementById("saveSessionBtn").addEventListener("click", async () => {
@@ -705,104 +871,4 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("closeSettingsModalBtn").addEventListener("click", () => {
     modal.style.display = "none";
   });
-
-  // ==========================================================================
-  // Admin Security Gate Logic (PIN & Master Auth)
-  // ==========================================================================
-  const lockScreen = document.getElementById("adminLockScreen");
-  const mainContent = document.getElementById("adminMainContent");
-  const lockForm = document.getElementById("adminLockForm");
-  const pinInput = document.getElementById("adminPinInput");
-  const lockError = document.getElementById("adminLockError");
-  const lockGoogleBtn = document.getElementById("lockGoogleBtn");
-  const lockDashboardBtn = document.getElementById("lockDashboardBtn");
-  const updateAdminPinBtn = document.getElementById("updateAdminPinBtn");
-  const newAdminPinInput = document.getElementById("newAdminPinInput");
-
-  function getAdminPin() {
-    return localStorage.getItem("attendance_admin_secret_pin") || "2933";
-  }
-
-  function unlockDashboard() {
-    sessionStorage.setItem("admin_authenticated", "true");
-    lockScreen.style.display = "none";
-    mainContent.style.display = "block";
-    lockError.style.display = "none";
-    pinInput.value = "";
-    if (map) {
-      setTimeout(() => map.invalidateSize(), 150);
-    }
-  }
-
-  function lockDashboard() {
-    sessionStorage.removeItem("admin_authenticated");
-    lockScreen.style.display = "flex";
-    mainContent.style.display = "none";
-    lockError.style.display = "none";
-    pinInput.value = "";
-    showToast("Dashboard locked.");
-  }
-
-  // Check on load
-  if (sessionStorage.getItem("admin_authenticated") === "true") {
-    unlockDashboard();
-  } else {
-    lockDashboard();
-  }
-
-  // Handle PIN Unlock
-  lockForm.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const enteredPin = pinInput.value.trim();
-    if (enteredPin === getAdminPin()) {
-      unlockDashboard();
-      showToast("Access Granted. Welcome, Admin!");
-    } else {
-      lockError.style.display = "block";
-      pinInput.value = "";
-      pinInput.focus();
-    }
-  });
-
-  // Google Sign-in from Lock Screen
-  lockGoogleBtn.addEventListener("click", async () => {
-    if (window.AttendanceDB.isConfigured() && typeof firebase !== "undefined" && firebase.auth) {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      firebase.auth().signInWithPopup(provider)
-        .then(result => {
-          teacherEmailBadge.textContent = result.user.email;
-          authBtnText.textContent = "Sign Out";
-          unlockDashboard();
-          showToast(`Logged in as ${result.user.email}`);
-        })
-        .catch(err => {
-          alert("Google Sign-In error: " + err.message);
-        });
-    } else {
-      // Demo mode password reminder
-      alert(`Demo Mode: You can unlock with default Admin PIN: ${getAdminPin()}`);
-      pinInput.focus();
-    }
-  });
-
-  // Manual Lock Button in Dashboard Header
-  if (lockDashboardBtn) {
-    lockDashboardBtn.addEventListener("click", () => {
-      lockDashboard();
-    });
-  }
-
-  // Update Admin PIN in Settings
-  if (updateAdminPinBtn) {
-    updateAdminPinBtn.addEventListener("click", () => {
-      const newPin = newAdminPinInput.value.trim();
-      if (!newPin || newPin.length < 4) {
-        alert("Please enter a valid PIN of at least 4 characters.");
-        return;
-      }
-      localStorage.setItem("attendance_admin_secret_pin", newPin);
-      newAdminPinInput.value = "";
-      showToast("Admin Secret PIN successfully updated!");
-    });
-  }
 });
