@@ -9,6 +9,18 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <script>
+    // Security Guard: Route students & visitors directly to student attendance check-in.
+    // The admin portal is restricted exclusively to the teacher.
+    if (sessionStorage.getItem("admin_authenticated") !== "true") {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (!urlParams.has("admin")) {
+        window.location.replace("student.html");
+      } else {
+        window.location.replace("admin.html");
+      }
+    }
+  </script>
   <style>
     .hero-box {
       text-align: center;

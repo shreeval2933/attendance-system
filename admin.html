@@ -16,8 +16,49 @@
   <!-- Main Stylesheet -->
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
-  <div class="container">
+  <!-- Full-Screen Admin Security Lock Screen -->
+  <div id="adminLockScreen" class="admin-lock-overlay">
+    <div class="admin-lock-card">
+      <div class="admin-lock-icon">🔒</div>
+      <h2 style="font-size:1.35rem; font-weight:700; color:#0f172a; margin-bottom:6px;">Teacher &amp; Admin Access</h2>
+      <p style="font-size:0.85rem; color:#64748b; margin-bottom:20px;">
+        This page is restricted. Please enter your Admin Secret PIN or sign in with your authorized Google account.
+      </p>
+
+      <form id="adminLockForm">
+        <div class="form-group" style="margin-bottom:14px; text-align:left;">
+          <label class="form-label" for="adminPinInput">Admin Secret PIN</label>
+          <input type="password" id="adminPinInput" class="form-input" placeholder="Enter PIN (Default: 2933)" autocomplete="current-password" required style="font-size:1.15rem; letter-spacing:0.15em; text-align:center;">
+        </div>
+        <p id="adminLockError" style="display:none; color:#dc2626; font-size:0.8rem; font-weight:600; margin-bottom:12px;">
+          ❌ Incorrect PIN. Access denied.
+        </p>
+        <button type="submit" class="btn btn-primary" style="width:100%; padding:11px; font-size:0.95rem; margin-bottom:12px;">
+          Unlock Dashboard →
+        </button>
+      </form>
+
+      <div style="margin:16px 0; display:flex; align-items:center; gap:10px; color:#94a3b8; font-size:0.75rem;">
+        <hr style="flex:1; border:none; border-top:1px solid #e2e8f0;"> OR <hr style="flex:1; border:none; border-top:1px solid #e2e8f0;">
+      </div>
+
+      <button id="lockGoogleBtn" class="btn btn-google" style="width:100%; padding:10px; font-size:0.88rem; margin-bottom:16px;">
+        <svg width="16" height="16" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+          <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.35 24 12 24z"/>
+          <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.14-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+          <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+        </svg>
+        Sign in with Google
+      </button>
+
+      <div style="font-size:0.78rem; color:#64748b;">
+        Students: <a href="student.html" style="color:#2563eb; text-decoration:none; font-weight:600;">Go to Student Check-In Page →</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="container" id="adminMainContent" style="display:none;">
     
     <!-- Header & Navigation -->
     <header class="header-bar">
@@ -40,7 +81,10 @@
           <span id="authBtnText">Sign in with Google</span>
         </button>
         <span class="user-badge" id="teacherEmailBadge">m25cse021@iitj.ac.in</span>
-        <button id="settingsModalBtn" class="btn btn-neutral" style="padding: 6px 10px;" title="Firebase Setup">
+        <button id="lockDashboardBtn" class="btn btn-neutral" style="padding: 6px 12px;" title="Lock Dashboard">
+          🔒 Lock
+        </button>
+        <button id="settingsModalBtn" class="btn btn-neutral" style="padding: 6px 10px;" title="Settings">
           ⚙️
         </button>
       </div>
@@ -216,8 +260,16 @@
         <li>Enable <strong>Cloud Firestore</strong> in test mode.</li>
         <li>Open <code>firebase-config.js</code> and replace the <code>firebaseConfig</code> keys with your web app credentials.</li>
       </ol>
+
+      <hr style="border:none; border-top:1px solid #e2e8f0; margin: 16px 0;">
+      <h4 style="font-size:0.95rem; margin-bottom:8px; color:#1e293b;">🔐 Change Admin Secret PIN</h4>
+      <div style="display:flex; gap:10px; margin-bottom:16px;">
+        <input type="password" id="newAdminPinInput" class="form-input" placeholder="New Secret PIN (min 4 digits)" style="flex:1;">
+        <button type="button" id="updateAdminPinBtn" class="btn btn-neutral">Update PIN</button>
+      </div>
+
       <div style="display:flex; justify-content:flex-end; gap:10px;">
-        <button id="closeSettingsModalBtn" class="btn btn-primary">Got it!</button>
+        <button id="closeSettingsModalBtn" class="btn btn-primary">Close</button>
       </div>
     </div>
   </div>
