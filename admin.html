@@ -95,6 +95,14 @@
       }
       return false;
     }
+
+    // Ensure password input is never autofilled by browser
+    window.addEventListener("DOMContentLoaded", function() {
+      var pinInput = document.getElementById("adminPinInput");
+      if (pinInput) pinInput.value = "";
+      setTimeout(function() { if (pinInput) pinInput.value = ""; }, 100);
+      setTimeout(function() { if (pinInput) pinInput.value = ""; }, 300);
+    });
   </script>
 </head>
 <body class="admin-locked">
@@ -107,10 +115,10 @@
         This page is strictly restricted. Please enter the Admin Password to unlock dashboard controls.
       </p>
 
-      <form id="adminLockForm" onsubmit="handleAdminUnlock(event); return false;">
+      <form id="adminLockForm" autocomplete="off" onsubmit="handleAdminUnlock(event); return false;">
         <div class="form-group" style="margin-bottom:14px; text-align:left;">
           <label class="form-label" for="adminPinInput">Admin Password / PIN</label>
-          <input type="password" id="adminPinInput" class="form-input" placeholder="Enter Password" autocomplete="current-password" required style="font-size:1.15rem; letter-spacing:0.15em; text-align:center;">
+          <input type="password" id="adminPinInput" class="form-input" placeholder="Enter Password" autocomplete="new-password" data-lpignore="true" value="" required style="font-size:1.15rem; letter-spacing:0.15em; text-align:center;">
         </div>
         <div id="adminLockError" style="display:none; color:#991b1b; background:#fee2e2; border:1px solid #f87171; font-size:0.88rem; font-weight:600; padding:10px 14px; border-radius:8px; margin-bottom:14px; text-align:center;">
           ❌ Incorrect PIN! Access denied.

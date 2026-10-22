@@ -569,8 +569,11 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Every time admin page is opened or reloaded, strictly enforce lock
+  // Every time admin page is opened or reloaded, strictly enforce lock and empty password field
   lockDashboard();
+  if (pinInput) pinInput.value = "";
+  setTimeout(() => { if (pinInput) pinInput.value = ""; }, 120);
+  setTimeout(() => { if (pinInput) pinInput.value = ""; }, 300);
 
   if (lockDashboardBtn) {
     lockDashboardBtn.addEventListener("click", () => {
