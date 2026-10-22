@@ -3,6 +3,7 @@
 // ============================================================================
 
 let currentSessionName = "Oct22_Lec";
+let currentSession = null;
 let map = null;
 let markersLayer = null;
 let centerCircle = null;
@@ -373,6 +374,8 @@ async function loadSessionData(sessionName) {
     };
   }
 
+  currentSession = session;
+
   // Populate form fields (without clobbering active user typing)
   if (session.openMinutes && document.activeElement !== document.getElementById("openMinutes")) {
     document.getElementById("openMinutes").value = session.openMinutes;
@@ -406,6 +409,7 @@ async function loadSessionData(sessionName) {
 
   // Subscribe to live session updates
   unsubscribeSession = window.AttendanceDB.onSessionChange(currentSessionName, (updatedSession) => {
+    currentSession = updatedSession || currentSession;
     updateSessionStatusUI(updatedSession);
     if (updatedSession) {
       if (updatedSession.openMinutes && document.activeElement !== document.getElementById("openMinutes")) {
@@ -428,112 +432,150 @@ function formatCsvCell(val) {
 }
 
 // CSV Export
-function downloadSubmissionsCSV() {
-  if (!currentSubmissions || currentSubmissions.length === 0) {
-    showToast("No submissions to export!");
-    return;
-  }
+async function downloadSubmissionsCSV() {
+  try {
+    if (!currentSubmissions || currentSubmissions.length === 0) {
+      if (window.AttendanceDB && window.AttendanceDB.getSubmissions) {
+        const live = await window.AttendanceDB.getSubmissions(currentSessionName);
+        if (live && live.length > 0) {
+          currentSubmissions = live;
+        }
+      }
+    }
 
-  // Pre-calculate session reference distances for accuracy in export
-  const medianCoords = calculateMedianCoordinates(currentSubmissions);
-  const centerLat = currentSession && currentSession.centerLat ? Number(currentSession.centerLat) : null;
-  const centerLng = currentSession && currentSession.centerLng ? Number(currentSession.centerLng) : null;
-  const flagThreshold = currentSession && currentSession.flagThresholdMeters ? Number(currentSession.flagThresholdMeters) : 50;
-  const centerRadius = currentSession && currentSession.radiusMeters ? Number(currentSession.radiusMeters) : 30;
-  const maxGpsError = currentSession && currentSession.maxGpsErrorMeters ? Number(currentSession.maxGpsErrorMeters) : 25;
-  const enforceCenter = Boolean(currentSession && currentSession.enforceCenterRadius);
+    if (!currentSubmissions || currentSubmissions.length === 0) {
+      showToast("No submissions to export!");
+      return;
+    }
 
-  const headers = [
-    "Index",
-    "Time",
-    "Name",
-    "Roll/Affiliation",
-    "Category",
-    "Roll No",
-    "Affiliation / Institute",
-    "Email",
-    "Latitude",
-    "Longitude",
-    "GPS Accuracy (m)",
-    "Dist from Median (m)",
-    "Dist from Center (m)",
-    "Status"
-  ];
-
-  const rows = currentSubmissions.map((sub, i) => {
-    const isNonIit = (sub.isIitj === false) || (sub.rollNo === "--" && sub.affiliation);
+    // Pre-calculate session reference distances for accuracy in export
+    const medianCoords = calculateMedianCoordinates(currentSubmissions);
     
-    // Distances
-    let distGroup = (medianCoords && sub.lat && sub.lng && currentSubmissions.length > 1)
-      ? calculateHaversineDistance(medianCoords.lat, medianCoords.lng, sub.lat, sub.lng)
-      : (sub.distanceFromGroup !== undefined && sub.distanceFromGroup !== null ? sub.distanceFromGroup : "");
+    const flagThresholdInput = parseFloat(document.getElementById("flagFartherThan")?.value);
+    const flagThreshold = !isNaN(flagThresholdInput) ? flagThresholdInput : (currentSession && currentSession.flagThresholdMeters ? Number(currentSession.flagThresholdMeters) : 150);
 
-    let distCenter = (centerLat && centerLng && sub.lat && sub.lng)
-      ? calculateHaversineDistance(centerLat, centerLng, sub.lat, sub.lng)
-      : (sub.distanceFromCenter !== undefined && sub.distanceFromCenter !== null ? sub.distanceFromCenter : "");
+    const maxGpsErrorInput = parseFloat(document.getElementById("maxGpsError")?.value);
+    const maxGpsError = !isNaN(maxGpsErrorInput) ? maxGpsErrorInput : (currentSession && currentSession.maxGpsError ? Number(currentSession.maxGpsError) : 200);
 
-    let isFlagged = sub.flagged;
-    if (isFlagged === undefined) {
-      isFlagged = (distGroup !== "" && distGroup > flagThreshold) ||
-                  (enforceCenter && distCenter !== "" && distCenter > centerRadius) ||
-                  (sub.accuracy && sub.accuracy > maxGpsError);
-    }
+    const centerLatInput = parseFloat(document.getElementById("centerLat")?.value);
+    const centerLat = !isNaN(centerLatInput) ? centerLatInput : (currentSession && currentSession.centerLat !== undefined ? Number(currentSession.centerLat) : null);
 
-    const timeStr = sub.timestamp ? new Date(sub.timestamp).toLocaleString() : "";
-    const nameStr = sub.name || "";
-    const emailStr = sub.email || "";
+    const centerLngInput = parseFloat(document.getElementById("centerLng")?.value);
+    const centerLng = !isNaN(centerLngInput) ? centerLngInput : (currentSession && currentSession.centerLng !== undefined ? Number(currentSession.centerLng) : null);
 
-    // Roll / Affiliation values
-    let summaryRollAffil = "";
-    let rollNoVal = "";
-    let affilVal = "";
+    const centerRadiusInput = parseFloat(document.getElementById("centerRadius")?.value);
+    const centerRadius = !isNaN(centerRadiusInput) ? centerRadiusInput : (currentSession && currentSession.centerRadius ? Number(currentSession.centerRadius) : 150);
 
-    if (!isNonIit && (sub.isIitj || (sub.rollNo && sub.rollNo !== "--"))) {
-      rollNoVal = (sub.rollNo && sub.rollNo !== "--") ? sub.rollNo : (sub.affiliation || "");
-      affilVal = "IIT Jodhpur";
-      summaryRollAffil = rollNoVal;
-    } else {
-      affilVal = (sub.affiliation && sub.affiliation !== "--") 
-        ? sub.affiliation 
-        : ((sub.rollNo && sub.rollNo !== "--") ? sub.rollNo : "");
-      rollNoVal = "";
-      summaryRollAffil = affilVal;
-    }
+    const enforceCenterCheckbox = document.getElementById("enforceCenterCheckbox");
+    const enforceCenter = enforceCenterCheckbox ? enforceCenterCheckbox.checked : Boolean(currentSession && currentSession.enforceCenter);
 
-    return [
-      i + 1,
-      timeStr,
-      nameStr,
-      summaryRollAffil,
-      isNonIit ? "External" : "IIT Jodhpur",
-      rollNoVal,
-      affilVal,
-      emailStr,
-      sub.lat !== undefined && sub.lat !== null ? sub.lat : "",
-      sub.lng !== undefined && sub.lng !== null ? sub.lng : "",
-      sub.accuracy !== undefined && sub.accuracy !== null ? Math.round(sub.accuracy) : "",
-      distGroup !== "" ? distGroup : "",
-      distCenter !== "" ? distCenter : "",
-      isFlagged ? "Flagged" : "Valid"
+    const headers = [
+      "Index",
+      "Time",
+      "Name",
+      "Roll/Affiliation",
+      "Category",
+      "Roll No",
+      "Affiliation / Institute",
+      "Email",
+      "Latitude",
+      "Longitude",
+      "GPS Accuracy (m)",
+      "Dist from Median (m)",
+      "Dist from Center (m)",
+      "Status"
     ];
-  });
 
-  // Prepend UTF-8 BOM so Excel opens special characters and formatting cleanly
-  const csvString = "\uFEFF" + [
-    headers.map(formatCsvCell).join(","),
-    ...rows.map(r => r.map(formatCsvCell).join(","))
-  ].join("\r\n");
+    const rows = currentSubmissions.map((sub, i) => {
+      const isNonIit = (sub.isIitj === false) || (sub.rollNo === "--" && sub.affiliation);
+      
+      // Distances
+      let distGroup = (medianCoords && sub.lat && sub.lng && currentSubmissions.length > 1)
+        ? calculateHaversineDistance(medianCoords.lat, medianCoords.lng, sub.lat, sub.lng)
+        : (sub.distanceFromGroup !== undefined && sub.distanceFromGroup !== null ? sub.distanceFromGroup : "");
 
-  const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.setAttribute("href", url);
-  link.setAttribute("download", `attendance_${currentSessionName || 'session'}_${Date.now()}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-  showToast("CSV downloaded successfully!");
+      let distCenter = (centerLat && centerLng && sub.lat && sub.lng)
+        ? calculateHaversineDistance(centerLat, centerLng, sub.lat, sub.lng)
+        : (sub.distanceFromCenter !== undefined && sub.distanceFromCenter !== null ? sub.distanceFromCenter : "");
+
+      let isFlagged = sub.flagged;
+      if (isFlagged === undefined) {
+        isFlagged = (distGroup !== "" && distGroup > flagThreshold) ||
+                    (enforceCenter && distCenter !== "" && distCenter > centerRadius) ||
+                    (sub.accuracy && sub.accuracy > maxGpsError);
+      }
+
+      const timeStr = sub.timestamp ? new Date(sub.timestamp).toLocaleString() : "";
+      const nameStr = sub.name || "";
+      const emailStr = sub.email || "";
+
+      // Roll / Affiliation values
+      let summaryRollAffil = "";
+      let rollNoVal = "";
+      let affilVal = "";
+
+      if (!isNonIit && (sub.isIitj || (sub.rollNo && sub.rollNo !== "--"))) {
+        rollNoVal = (sub.rollNo && sub.rollNo !== "--") ? sub.rollNo : (sub.affiliation || "");
+        affilVal = "IIT Jodhpur";
+        summaryRollAffil = rollNoVal;
+      } else {
+        affilVal = (sub.affiliation && sub.affiliation !== "--") 
+          ? sub.affiliation 
+          : ((sub.rollNo && sub.rollNo !== "--") ? sub.rollNo : "");
+        rollNoVal = "";
+        summaryRollAffil = affilVal;
+      }
+
+      return [
+        i + 1,
+        timeStr,
+        nameStr,
+        summaryRollAffil,
+        isNonIit ? "External" : "IIT Jodhpur",
+        rollNoVal,
+        affilVal,
+        emailStr,
+        sub.lat !== undefined && sub.lat !== null ? sub.lat : "",
+        sub.lng !== undefined && sub.lng !== null ? sub.lng : "",
+        sub.accuracy !== undefined && sub.accuracy !== null ? Math.round(sub.accuracy) : "",
+        distGroup !== "" ? distGroup : "",
+        distCenter !== "" ? distCenter : "",
+        isFlagged ? "Flagged" : "Valid"
+      ];
+    });
+
+    // Prepend UTF-8 BOM so Excel opens special characters and formatting cleanly
+    const csvString = "\uFEFF" + [
+      headers.map(formatCsvCell).join(","),
+      ...rows.map(r => r.map(formatCsvCell).join(","))
+    ].join("\r\n");
+
+    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+    const fileName = `attendance_${currentSessionName || 'session'}_${Date.now()}.csv`;
+
+    if (window.navigator && window.navigator.msSaveOrOpenBlob) {
+      window.navigator.msSaveOrOpenBlob(blob, fileName);
+    } else {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", fileName);
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        if (link.parentNode) {
+          document.body.removeChild(link);
+        }
+        URL.revokeObjectURL(url);
+      }, 1000);
+    }
+
+    showToast("CSV downloaded successfully!");
+  } catch (err) {
+    console.error("CSV download error:", err);
+    alert("Failed to download CSV: " + (err.message || err));
+  }
 }
 
 // ==========================================================================
