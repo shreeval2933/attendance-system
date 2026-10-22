@@ -6,21 +6,31 @@
   <title>Attendance – Teacher Admin Dashboard</title>
   
   <style>
-    /* Strict Anti-Flicker Security: Completely invisible until password entered */
+    /* Strict Anti-Flicker Security: Body-driven visibility eliminates any flash */
     body.admin-locked {
       background: #0f172a !important;
       overflow: hidden !important;
       margin: 0 !important;
       padding: 0 !important;
     }
-    body.admin-locked #adminMainContent,
-    #adminMainContent:not(.unlocked) {
+    body.admin-locked #adminLockScreen {
+      display: flex !important;
+    }
+    body.admin-locked #adminMainContent {
       display: none !important;
       visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
       height: 0 !important;
       overflow: hidden !important;
+    }
+    body:not(.admin-locked) #adminLockScreen {
+      display: none !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
+    }
+    body:not(.admin-locked) #adminMainContent {
+      display: block !important;
+      visibility: visible !important;
+      height: auto !important;
     }
     .admin-lock-overlay {
       position: fixed !important;
@@ -45,7 +55,47 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   
   <!-- Main Stylesheet -->
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=2.1">
+
+  <script>
+    // Instant Inline Unlock Handler - Evaluates immediately without waiting for background assets
+    function handleAdminUnlock(event) {
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      var pinInput = document.getElementById("adminPinInput");
+      var lockError = document.getElementById("adminLockError");
+      var entered = pinInput ? pinInput.value.trim() : "";
+      if (!entered) {
+        if (pinInput) pinInput.focus();
+        return false;
+      }
+
+      var custom = (localStorage.getItem("attendance_admin_secret_pin") || "").trim();
+      if (entered === "2933" || (custom.length > 0 && entered === custom)) {
+        if (lockError) lockError.style.display = "none";
+        document.body.classList.remove("admin-locked");
+        if (typeof window.unlockDashboard === "function") {
+          window.unlockDashboard();
+        }
+        if (pinInput) pinInput.value = "";
+      } else {
+        if (lockError) lockError.style.display = "block";
+        if (pinInput) {
+          pinInput.value = "";
+          pinInput.focus();
+          pinInput.style.borderColor = "#dc2626";
+          pinInput.style.backgroundColor = "#fff1f2";
+          setTimeout(function() {
+            pinInput.style.borderColor = "";
+            pinInput.style.backgroundColor = "";
+          }, 1200);
+        }
+      }
+      return false;
+    }
+  </script>
 </head>
 <body class="admin-locked">
   <!-- Full-Screen Admin Security Lock Screen (Solid 100% Opaque) -->
@@ -57,7 +107,7 @@
         This page is strictly restricted. Please enter the Admin Password to unlock dashboard controls.
       </p>
 
-      <form id="adminLockForm" onsubmit="return false;">
+      <form id="adminLockForm" onsubmit="handleAdminUnlock(event); return false;">
         <div class="form-group" style="margin-bottom:14px; text-align:left;">
           <label class="form-label" for="adminPinInput">Admin Password / PIN</label>
           <input type="password" id="adminPinInput" class="form-input" placeholder="Enter Password" autocomplete="current-password" required style="font-size:1.15rem; letter-spacing:0.15em; text-align:center;">
@@ -65,7 +115,7 @@
         <div id="adminLockError" style="display:none; color:#991b1b; background:#fee2e2; border:1px solid #f87171; font-size:0.88rem; font-weight:600; padding:10px 14px; border-radius:8px; margin-bottom:14px; text-align:center;">
           ❌ Incorrect PIN! Access denied.
         </div>
-        <button type="submit" class="btn btn-primary" style="width:100%; padding:11px; font-size:0.95rem; margin-bottom:12px;">
+        <button type="submit" id="unlockDashboardBtn" class="btn btn-primary" style="width:100%; padding:11px; font-size:0.95rem; margin-bottom:12px;">
           Unlock Dashboard →
         </button>
       </form>
@@ -76,7 +126,7 @@
     </div>
   </div>
 
-  <div class="container" id="adminMainContent" style="display: none !important;">
+  <div class="container" id="adminMainContent">
     
     <!-- Header & Navigation -->
     <header class="header-bar">
@@ -298,7 +348,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
   <!-- App Services & Scripts -->
-  <script src="firebase-config.js"></script>
-  <script src="admin.js"></script>
+  <script src="firebase-config.js?v=2.1"></script>
+  <script src="admin.js?v=2.1"></script>
 </body>
 </html>

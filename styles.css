@@ -737,14 +737,31 @@ body {
 body.admin-locked {
   overflow: hidden !important;
   background: #0f172a !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
-#adminMainContent {
+body.admin-locked #adminLockScreen {
+  display: flex !important;
+}
+
+body.admin-locked #adminMainContent {
   display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  overflow: hidden !important;
 }
 
-#adminMainContent.unlocked {
+body:not(.admin-locked) #adminLockScreen {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+body:not(.admin-locked) #adminMainContent {
   display: block !important;
+  visibility: visible !important;
+  height: auto !important;
 }
 
 .admin-lock-overlay {
@@ -756,7 +773,7 @@ body.admin-locked {
   width: 100vw;
   height: 100vh;
   background: #0f172a !important;
-  z-index: 9999999;
+  z-index: 99999999;
   display: flex;
   align-items: center;
   justify-content: center;

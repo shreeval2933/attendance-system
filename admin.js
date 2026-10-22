@@ -453,16 +453,9 @@ let isDashboardLoaded = false;
 
 function unlockDashboard() {
   document.body.classList.remove("admin-locked");
-  const lockScreen = document.getElementById("adminLockScreen");
-  const mainContent = document.getElementById("adminMainContent");
   const lockError = document.getElementById("adminLockError");
   const pinInput = document.getElementById("adminPinInput");
 
-  if (lockScreen) lockScreen.style.setProperty("display", "none", "important");
-  if (mainContent) {
-    mainContent.classList.add("unlocked");
-    mainContent.style.setProperty("display", "block", "important");
-  }
   if (lockError) lockError.style.display = "none";
   if (pinInput) pinInput.value = "";
 
@@ -503,16 +496,9 @@ function unlockDashboard() {
 
 function lockDashboard() {
   document.body.classList.add("admin-locked");
-  const lockScreen = document.getElementById("adminLockScreen");
-  const mainContent = document.getElementById("adminMainContent");
   const lockError = document.getElementById("adminLockError");
   const pinInput = document.getElementById("adminPinInput");
 
-  if (lockScreen) lockScreen.style.setProperty("display", "flex", "important");
-  if (mainContent) {
-    mainContent.classList.remove("unlocked");
-    mainContent.style.setProperty("display", "none", "important");
-  }
   if (lockError) lockError.style.display = "none";
   if (pinInput) {
     pinInput.value = "";
@@ -520,11 +506,14 @@ function lockDashboard() {
   }
 }
 
+// Expose globally so inline HTML form can trigger immediately
+window.unlockDashboard = unlockDashboard;
+window.lockDashboard = lockDashboard;
+window.verifyAdminPin = verifyAdminPin;
+
 // Event Bindings
 document.addEventListener("DOMContentLoaded", () => {
   // 1. Immediately Bind & Execute Security Lock Screen
-  const lockScreen = document.getElementById("adminLockScreen");
-  const mainContent = document.getElementById("adminMainContent");
   const lockForm = document.getElementById("adminLockForm");
   const pinInput = document.getElementById("adminPinInput");
   const lockError = document.getElementById("adminLockError");
