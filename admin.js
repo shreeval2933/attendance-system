@@ -196,6 +196,17 @@ function renderSubmissions(submissions, session) {
 
     const isFlagged = flagReasons.length > 0;
 
+    sub.distanceFromGroup = distGroup;
+    sub.distanceFromCenter = distCenter;
+    sub.flagged = isFlagged;
+    sub.flagReasons = flagReasons;
+
+    // Check if external or IIT
+    const isNonIit = (sub.isIitj === false) || (sub.rollNo === "--" && sub.affiliation);
+    const affText = !isNonIit 
+      ? `Roll No: <b>${(sub.rollNo && sub.rollNo !== "--") ? sub.rollNo : (sub.affiliation || '--')}</b> <span style="color:#2563eb; font-size:10px;">(IIT Jodhpur)</span>` 
+      : `Affiliation: <b>${(sub.affiliation && sub.affiliation !== "--") ? sub.affiliation : (sub.rollNo && sub.rollNo !== "--" ? sub.rollNo : '--')}</b> <span style="color:#059669; font-size:10px;">(External)</span>`;
+
     // Add marker to map
     if (sub.lat && sub.lng) {
       const marker = L.marker([sub.lat, sub.lng], {
@@ -206,7 +217,7 @@ function renderSubmissions(submissions, session) {
         <div style="font-size:12px; line-height:1.4;">
           <strong>${sub.name || 'Anonymous'}</strong><br/>
           <span style="color:#64748b;">${sub.email || ''}</span><br/>
-          ${sub.isIitj ? `Roll No: <b>${sub.rollNo || sub.affiliation}</b> <span style="color:#2563eb; font-size:10px;">(IIT Jodhpur)</span>` : `Affiliation: <b>${sub.affiliation || '--'}</b>`}<br/>
+          ${affText}<br/>
           Dist from Median: <b>${distGroup !== null ? distGroup + ' m' : '--'}</b><br/>
           ${distCenter !== null ? `Dist from Center: <b>${distCenter} m</b><br/>` : ''}
           GPS Accuracy: ±${sub.accuracy || '--'} m<br/>
@@ -219,7 +230,17 @@ function renderSubmissions(submissions, session) {
       sub._marker = marker;
     }
 
-    const rollDisplay = sub.rollNo ? sub.rollNo : (sub.affiliation || "--");
+    let rollDisplay = "--";
+    if (!isNonIit && (sub.isIitj || (sub.rollNo && sub.rollNo !== "--"))) {
+      const r = (sub.rollNo && sub.rollNo !== "--") ? sub.rollNo : (sub.affiliation || "--");
+      rollDisplay = `<strong>${r}</strong> <span style="color:#2563eb; font-size:11px; font-weight:normal;">(IIT Jodhpur)</span>`;
+    } else {
+      const aff = (sub.affiliation && sub.affiliation !== "--") 
+        ? sub.affiliation 
+        : ((sub.rollNo && sub.rollNo !== "--") ? sub.rollNo : "--");
+      rollDisplay = `<span style="color:#059669; font-weight:600;">${aff}</span> <span style="color:#64748b; font-size:11px; font-weight:normal;">(External)</span>`;
+    }
+
     const flagDisplay = isFlagged 
       ? `<span class="badge badge-flagged" title="${flagReasons.join('; ')}">Flagged</span>` 
       : `<span class="badge badge-valid">Valid</span>`;
@@ -399,6 +420,13 @@ async function loadSessionData(sessionName) {
   });
 }
 
+// Helper to escape values safely for CSV in Excel
+function formatCsvCell(val) {
+  if (val === null || val === undefined) return '""';
+  const str = String(val).replace(/"/g, '""');
+  return `"${str}"`;
+}
+
 // CSV Export
 function downloadSubmissionsCSV() {
   if (!currentSubmissions || currentSubmissions.length === 0) {
@@ -406,29 +434,105 @@ function downloadSubmissionsCSV() {
     return;
   }
 
-  const headers = ["Index", "Time", "Name", "Roll/Affiliation", "Email", "Latitude", "Longitude", "GPS Accuracy (m)", "Dist from Median (m)", "Dist from Center (m)", "Status"];
-  const rows = currentSubmissions.map((sub, i) => [
-    i + 1,
-    sub.timestamp ? new Date(sub.timestamp).toLocaleString() : "",
-    `"${(sub.name || "").replace(/"/g, '""')}"`,
-    `"${(sub.rollNo || sub.affiliation || "").replace(/"/g, '""')}"`,
-    sub.email || "",
-    sub.lat || "",
-    sub.lng || "",
-    sub.accuracy || "",
-    sub.distanceFromGroup !== undefined ? sub.distanceFromGroup : "",
-    sub.distanceFromCenter !== undefined ? sub.distanceFromCenter : "",
-    sub.flagged ? "Flagged" : "Valid"
-  ]);
+  // Pre-calculate session reference distances for accuracy in export
+  const medianCoords = calculateMedianCoordinates(currentSubmissions);
+  const centerLat = currentSession && currentSession.centerLat ? Number(currentSession.centerLat) : null;
+  const centerLng = currentSession && currentSession.centerLng ? Number(currentSession.centerLng) : null;
+  const flagThreshold = currentSession && currentSession.flagThresholdMeters ? Number(currentSession.flagThresholdMeters) : 50;
+  const centerRadius = currentSession && currentSession.radiusMeters ? Number(currentSession.radiusMeters) : 30;
+  const maxGpsError = currentSession && currentSession.maxGpsErrorMeters ? Number(currentSession.maxGpsErrorMeters) : 25;
+  const enforceCenter = Boolean(currentSession && currentSession.enforceCenterRadius);
 
-  const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
-  const encodedUri = encodeURI(csvContent);
+  const headers = [
+    "Index",
+    "Time",
+    "Name",
+    "Roll/Affiliation",
+    "Category",
+    "Roll No",
+    "Affiliation / Institute",
+    "Email",
+    "Latitude",
+    "Longitude",
+    "GPS Accuracy (m)",
+    "Dist from Median (m)",
+    "Dist from Center (m)",
+    "Status"
+  ];
+
+  const rows = currentSubmissions.map((sub, i) => {
+    const isNonIit = (sub.isIitj === false) || (sub.rollNo === "--" && sub.affiliation);
+    
+    // Distances
+    let distGroup = (medianCoords && sub.lat && sub.lng && currentSubmissions.length > 1)
+      ? calculateHaversineDistance(medianCoords.lat, medianCoords.lng, sub.lat, sub.lng)
+      : (sub.distanceFromGroup !== undefined && sub.distanceFromGroup !== null ? sub.distanceFromGroup : "");
+
+    let distCenter = (centerLat && centerLng && sub.lat && sub.lng)
+      ? calculateHaversineDistance(centerLat, centerLng, sub.lat, sub.lng)
+      : (sub.distanceFromCenter !== undefined && sub.distanceFromCenter !== null ? sub.distanceFromCenter : "");
+
+    let isFlagged = sub.flagged;
+    if (isFlagged === undefined) {
+      isFlagged = (distGroup !== "" && distGroup > flagThreshold) ||
+                  (enforceCenter && distCenter !== "" && distCenter > centerRadius) ||
+                  (sub.accuracy && sub.accuracy > maxGpsError);
+    }
+
+    const timeStr = sub.timestamp ? new Date(sub.timestamp).toLocaleString() : "";
+    const nameStr = sub.name || "";
+    const emailStr = sub.email || "";
+
+    // Roll / Affiliation values
+    let summaryRollAffil = "";
+    let rollNoVal = "";
+    let affilVal = "";
+
+    if (!isNonIit && (sub.isIitj || (sub.rollNo && sub.rollNo !== "--"))) {
+      rollNoVal = (sub.rollNo && sub.rollNo !== "--") ? sub.rollNo : (sub.affiliation || "");
+      affilVal = "IIT Jodhpur";
+      summaryRollAffil = rollNoVal;
+    } else {
+      affilVal = (sub.affiliation && sub.affiliation !== "--") 
+        ? sub.affiliation 
+        : ((sub.rollNo && sub.rollNo !== "--") ? sub.rollNo : "");
+      rollNoVal = "";
+      summaryRollAffil = affilVal;
+    }
+
+    return [
+      i + 1,
+      timeStr,
+      nameStr,
+      summaryRollAffil,
+      isNonIit ? "External" : "IIT Jodhpur",
+      rollNoVal,
+      affilVal,
+      emailStr,
+      sub.lat !== undefined && sub.lat !== null ? sub.lat : "",
+      sub.lng !== undefined && sub.lng !== null ? sub.lng : "",
+      sub.accuracy !== undefined && sub.accuracy !== null ? Math.round(sub.accuracy) : "",
+      distGroup !== "" ? distGroup : "",
+      distCenter !== "" ? distCenter : "",
+      isFlagged ? "Flagged" : "Valid"
+    ];
+  });
+
+  // Prepend UTF-8 BOM so Excel opens special characters and formatting cleanly
+  const csvString = "\uFEFF" + [
+    headers.map(formatCsvCell).join(","),
+    ...rows.map(r => r.map(formatCsvCell).join(","))
+  ].join("\r\n");
+
+  const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
-  link.setAttribute("href", encodedUri);
-  link.setAttribute("download", `attendance_${currentSessionName}_${Date.now()}.csv`);
+  link.setAttribute("href", url);
+  link.setAttribute("download", `attendance_${currentSessionName || 'session'}_${Date.now()}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(url);
   showToast("CSV downloaded successfully!");
 }
 

@@ -308,7 +308,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         studentRollNo.focus();
         return;
       }
-      affiliation = rollNo;
+      affiliation = "IIT Jodhpur";
     } else {
       const whereFrom = studentOtherAffiliation.value.trim();
       if (!whereFrom) {
@@ -317,10 +317,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
       affiliation = whereFrom;
-      rollNo = "--";
+      rollNo = "";
     }
 
-    if (!name || !email || !affiliation) {
+    if (!name || !email || (!rollNo && !affiliation)) {
       alert("Please fill out all required fields.");
       return;
     }
