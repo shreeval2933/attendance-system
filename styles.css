@@ -734,18 +734,29 @@ body {
   }
 }
 
-/* ==========================================================================
-   Admin Security Gate / Lock Screen
-   ========================================================================== */
+body.admin-locked {
+  overflow: hidden !important;
+  background: #0f172a !important;
+}
+
+#adminMainContent {
+  display: none !important;
+}
+
+#adminMainContent.unlocked {
+  display: block !important;
+}
+
 .admin-lock-overlay {
   position: fixed;
   top: 0;
   left: 0;
+  right: 0;
+  bottom: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(15, 23, 42, 0.96);
-  backdrop-filter: blur(8px);
-  z-index: 999999;
+  background: #0f172a !important;
+  z-index: 9999999;
   display: flex;
   align-items: center;
   justify-content: center;

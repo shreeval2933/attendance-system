@@ -448,13 +448,17 @@ function verifyAdminPin(entered) {
 
 function unlockDashboard() {
   sessionStorage.setItem("admin_authenticated", "true");
+  document.body.classList.remove("admin-locked");
   const lockScreen = document.getElementById("adminLockScreen");
   const mainContent = document.getElementById("adminMainContent");
   const lockError = document.getElementById("adminLockError");
   const pinInput = document.getElementById("adminPinInput");
 
   if (lockScreen) lockScreen.style.setProperty("display", "none", "important");
-  if (mainContent) mainContent.style.setProperty("display", "block", "important");
+  if (mainContent) {
+    mainContent.classList.add("unlocked");
+    mainContent.style.setProperty("display", "block", "important");
+  }
   if (lockError) lockError.style.display = "none";
   if (pinInput) pinInput.value = "";
 
@@ -471,13 +475,17 @@ function unlockDashboard() {
 
 function lockDashboard() {
   sessionStorage.removeItem("admin_authenticated");
+  document.body.classList.add("admin-locked");
   const lockScreen = document.getElementById("adminLockScreen");
   const mainContent = document.getElementById("adminMainContent");
   const lockError = document.getElementById("adminLockError");
   const pinInput = document.getElementById("adminPinInput");
 
   if (lockScreen) lockScreen.style.setProperty("display", "flex", "important");
-  if (mainContent) mainContent.style.setProperty("display", "none", "important");
+  if (mainContent) {
+    mainContent.classList.remove("unlocked");
+    mainContent.style.setProperty("display", "none", "important");
+  }
   if (lockError) lockError.style.display = "none";
   if (pinInput) {
     pinInput.value = "";
@@ -493,7 +501,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const lockForm = document.getElementById("adminLockForm");
   const pinInput = document.getElementById("adminPinInput");
   const lockError = document.getElementById("adminLockError");
-  const lockGoogleBtn = document.getElementById("lockGoogleBtn");
   const lockDashboardBtn = document.getElementById("lockDashboardBtn");
   const updateAdminPinBtn = document.getElementById("updateAdminPinBtn");
   const newAdminPinInput = document.getElementById("newAdminPinInput");
@@ -509,7 +516,7 @@ document.addEventListener("DOMContentLoaded", () => {
         pinInput.value = "";
         pinInput.focus();
       }
-      showToast("Incorrect PIN. Please try again.");
+      showToast("Incorrect Password. Please try again.");
     }
   }
 
@@ -532,37 +539,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Check state on load
-  if (sessionStorage.getItem("admin_authenticated") === "true") {
-    unlockDashboard();
-  } else {
-    lockDashboard();
-  }
-
-  // Google sign in on lock screen
-  if (lockGoogleBtn) {
-    lockGoogleBtn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      if (window.AttendanceDB && window.AttendanceDB.isConfigured() && typeof firebase !== "undefined" && firebase.auth) {
-        try {
-          const provider = new firebase.auth.GoogleAuthProvider();
-          const result = await firebase.auth().signInWithPopup(provider);
-          const teacherEmailBadge = document.getElementById("teacherEmailBadge");
-          const authBtnText = document.getElementById("authBtnText");
-          if (teacherEmailBadge) teacherEmailBadge.textContent = result.user.email;
-          if (authBtnText) authBtnText.textContent = "Sign Out";
-          unlockDashboard();
-          showToast(`Logged in as ${result.user.email}`);
-        } catch (err) {
-          console.error("Google lock sign-in error:", err);
-          alert("Google Sign-In: " + err.message);
-        }
-      } else {
-        alert("Demo Mode: Enter Master PIN '2933' to unlock.");
-        if (pinInput) pinInput.focus();
-      }
-    });
-  }
+  // Always enforce lock on page load until correct password is submitted
+  lockDashboard();
 
   if (lockDashboardBtn) {
     lockDashboardBtn.addEventListener("click", () => {
@@ -806,13 +784,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Google Sign-in / Auth Handler
+  // Google Sign-in / Auth Handler (if enabled in UI)
   const authBtnText = document.getElementById("authBtnText");
   const teacherEmailBadge = document.getElementById("teacherEmailBadge");
+  const googleAuthBtn = document.getElementById("googleAuthBtn");
 
   // Restore saved email from localStorage in local mode
   const savedTeacherEmail = localStorage.getItem("attendance_teacher_email");
-  if (savedTeacherEmail) {
+  if (savedTeacherEmail && teacherEmailBadge) {
     teacherEmailBadge.textContent = savedTeacherEmail;
   }
 
@@ -820,48 +799,50 @@ document.addEventListener("DOMContentLoaded", () => {
   if (window.AttendanceDB.isConfigured() && typeof firebase !== "undefined" && firebase.auth) {
     firebase.auth().onAuthStateChanged((user) => {
       if (user) {
-        teacherEmailBadge.textContent = user.email;
-        authBtnText.textContent = "Sign Out";
+        if (teacherEmailBadge) teacherEmailBadge.textContent = user.email;
+        if (authBtnText) authBtnText.textContent = "Sign Out";
         localStorage.setItem("attendance_teacher_email", user.email);
       } else {
-        authBtnText.textContent = "Sign in with Google";
+        if (authBtnText) authBtnText.textContent = "Sign in with Google";
       }
     });
   }
 
-  document.getElementById("googleAuthBtn").addEventListener("click", async () => {
-    if (window.AttendanceDB.isConfigured() && typeof firebase !== "undefined" && firebase.auth) {
-      const currentUser = firebase.auth().currentUser;
-      if (currentUser) {
-        if (confirm(`Currently signed in as ${currentUser.email}. Do you want to sign out?`)) {
-          await firebase.auth().signOut();
-          showToast("Signed out successfully");
+  if (googleAuthBtn) {
+    googleAuthBtn.addEventListener("click", async () => {
+      if (window.AttendanceDB.isConfigured() && typeof firebase !== "undefined" && firebase.auth) {
+        const currentUser = firebase.auth().currentUser;
+        if (currentUser) {
+          if (confirm(`Currently signed in as ${currentUser.email}. Do you want to sign out?`)) {
+            await firebase.auth().signOut();
+            showToast("Signed out successfully");
+          }
+        } else {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          firebase.auth().signInWithPopup(provider)
+            .then(result => {
+              if (teacherEmailBadge) teacherEmailBadge.textContent = result.user.email;
+              if (authBtnText) authBtnText.textContent = "Sign Out";
+              showToast(`Signed in as ${result.user.email}`);
+            })
+            .catch(err => {
+              console.error("Google Auth error:", err);
+              alert("Google Sign-In error: " + err.message);
+            });
         }
       } else {
-        const provider = new firebase.auth.GoogleAuthProvider();
-        firebase.auth().signInWithPopup(provider)
-          .then(result => {
-            teacherEmailBadge.textContent = result.user.email;
-            authBtnText.textContent = "Sign Out";
-            showToast(`Signed in as ${result.user.email}`);
-          })
-          .catch(err => {
-            console.error("Google Auth error:", err);
-            alert("Google Sign-In error: " + err.message + "\n\nTip: In the Firebase Console, make sure 'Authentication' -> 'Sign-in method' -> 'Google' is enabled.");
-          });
+        // Local/Demo Mode prompt
+        const current = (teacherEmailBadge && teacherEmailBadge.textContent) || "teacher@institution.edu";
+        const email = prompt("Enter teacher profile email:", current);
+        if (email && email.trim()) {
+          const clean = email.trim().toLowerCase();
+          if (teacherEmailBadge) teacherEmailBadge.textContent = clean;
+          localStorage.setItem("attendance_teacher_email", clean);
+          showToast(`Teacher profile updated: ${clean}`);
+        }
       }
-    } else {
-      // Local/Demo Mode prompt
-      const current = teacherEmailBadge.textContent || "teacher@institution.edu";
-      const email = prompt("Enter teacher profile email:", current);
-      if (email && email.trim()) {
-        const clean = email.trim().toLowerCase();
-        teacherEmailBadge.textContent = clean;
-        localStorage.setItem("attendance_teacher_email", clean);
-        showToast(`Teacher profile updated: ${clean}`);
-      }
-    }
-  });
+    });
+  }
 
   // Settings Modal
   const modal = document.getElementById("settingsModal");
