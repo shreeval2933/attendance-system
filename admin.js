@@ -432,18 +432,18 @@ function downloadSubmissionsCSV() {
 // ==========================================================================
 // Admin Security Gate Logic (Master PIN & Immediate Auth)
 // ==========================================================================
-const DEFAULT_MASTER_PIN = "2933";
+const REQUIRED_ADMIN_PIN = "2933";
 
 function getStoredAdminPin() {
-  return localStorage.getItem("attendance_admin_secret_pin") || DEFAULT_MASTER_PIN;
+  return localStorage.getItem("attendance_admin_secret_pin") || REQUIRED_ADMIN_PIN;
 }
 
 function verifyAdminPin(entered) {
   if (!entered) return false;
   const clean = String(entered).trim();
   const custom = (localStorage.getItem("attendance_admin_secret_pin") || "").trim();
-  // Master PIN 2933 ALWAYS unlocks, as does any custom user-configured PIN
-  return clean === DEFAULT_MASTER_PIN || (custom.length > 0 && clean === custom);
+  // PIN 2933 MUST open. Any other PIN will return false.
+  return clean === REQUIRED_ADMIN_PIN || (custom.length > 0 && clean === custom);
 }
 
 function unlockDashboard() {
@@ -508,15 +508,24 @@ document.addEventListener("DOMContentLoaded", () => {
   function handleUnlockAttempt() {
     const entered = pinInput ? pinInput.value : "";
     if (verifyAdminPin(entered)) {
+      if (lockError) lockError.style.display = "none";
       unlockDashboard();
       showToast("Access Granted. Welcome, Teacher!");
     } else {
-      if (lockError) lockError.style.display = "block";
+      if (lockError) {
+        lockError.style.display = "block";
+      }
       if (pinInput) {
         pinInput.value = "";
         pinInput.focus();
+        pinInput.style.borderColor = "#dc2626";
+        pinInput.style.backgroundColor = "#fff1f2";
+        setTimeout(() => {
+          pinInput.style.borderColor = "";
+          pinInput.style.backgroundColor = "";
+        }, 1200);
       }
-      showToast("Incorrect Password. Please try again.");
+      showToast("❌ Incorrect PIN. Access denied.");
     }
   }
 
@@ -530,6 +539,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (pinInput) {
+    pinInput.addEventListener("input", () => {
+      if (lockError) lockError.style.display = "none";
+    });
     pinInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
