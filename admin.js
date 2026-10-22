@@ -58,6 +58,9 @@ function showToast(message) {
 
 // Initialize Leaflet Map
 function initMap() {
+  if (map) return;
+  const el = document.getElementById("adminMap");
+  if (!el) return;
   const defaultCenter = [26.47338, 73.11728]; // Classroom coordinates
   map = L.map("adminMap").setView(defaultCenter, 16);
 
@@ -446,8 +449,9 @@ function verifyAdminPin(entered) {
   return clean === REQUIRED_ADMIN_PIN || (custom.length > 0 && clean === custom);
 }
 
+let isDashboardLoaded = false;
+
 function unlockDashboard() {
-  sessionStorage.setItem("admin_authenticated", "true");
   document.body.classList.remove("admin-locked");
   const lockScreen = document.getElementById("adminLockScreen");
   const mainContent = document.getElementById("adminMainContent");
@@ -462,7 +466,31 @@ function unlockDashboard() {
   if (lockError) lockError.style.display = "none";
   if (pinInput) pinInput.value = "";
 
-  if (map) {
+  // Initialize Map, QR Code, and Session ONLY AFTER unlock
+  if (!isDashboardLoaded) {
+    isDashboardLoaded = true;
+    try {
+      initMap();
+    } catch (err) {
+      console.error("Map initialization failed:", err);
+    }
+
+    const modeBadge = document.getElementById("firebaseModeBadge");
+    if (modeBadge) {
+      if (window.AttendanceDB && window.AttendanceDB.isConfigured()) {
+        modeBadge.textContent = "Firebase Live";
+        modeBadge.style.background = "#dcfce7";
+        modeBadge.style.color = "#15803d";
+        modeBadge.style.borderColor = "#86efac";
+      } else {
+        modeBadge.textContent = "Local Multi-Tab Sync";
+      }
+    }
+
+    loadSessionData(currentSessionName).catch((err) => {
+      console.error("Error loading session data:", err);
+    });
+  } else if (map) {
     setTimeout(() => {
       try {
         map.invalidateSize();
@@ -474,7 +502,6 @@ function unlockDashboard() {
 }
 
 function lockDashboard() {
-  sessionStorage.removeItem("admin_authenticated");
   document.body.classList.add("admin-locked");
   const lockScreen = document.getElementById("adminLockScreen");
   const mainContent = document.getElementById("adminMainContent");
@@ -551,7 +578,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Always enforce lock on page load until correct password is submitted
+  // Every time admin page is opened or reloaded, strictly enforce lock
   lockDashboard();
 
   if (lockDashboardBtn) {
@@ -573,31 +600,6 @@ document.addEventListener("DOMContentLoaded", () => {
       showToast("Admin Secret PIN successfully updated!");
     });
   }
-
-  // 2. Initialize Dashboard Components Safely
-  try {
-    initMap();
-  } catch (err) {
-    console.error("Map initialization failed:", err);
-  }
-
-  // Mode badge update
-  const modeBadge = document.getElementById("firebaseModeBadge");
-  if (modeBadge) {
-    if (window.AttendanceDB && window.AttendanceDB.isConfigured()) {
-      modeBadge.textContent = "Firebase Live";
-      modeBadge.style.background = "#dcfce7";
-      modeBadge.style.color = "#15803d";
-      modeBadge.style.borderColor = "#86efac";
-    } else {
-      modeBadge.textContent = "Local Multi-Tab Sync";
-    }
-  }
-
-  // Load initial session asynchronously (non-blocking)
-  loadSessionData(currentSessionName).catch((err) => {
-    console.error("Error loading initial session:", err);
-  });
 
   // Toggle collapsible location enforcement
   const toggleBtn = document.getElementById("toggleGeoEnforcement");

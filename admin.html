@@ -15,6 +15,31 @@
   
   <!-- Main Stylesheet -->
   <link rel="stylesheet" href="styles.css">
+
+  <style>
+    /* Strict Anti-Flicker Security: Completely invisible until password entered */
+    body.admin-locked #adminMainContent,
+    #adminMainContent:not(.unlocked) {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      height: 0 !important;
+      overflow: hidden !important;
+    }
+    .admin-lock-overlay {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      background: #0f172a !important;
+      z-index: 99999999 !important;
+      display: flex !important;
+    }
+  </style>
 </head>
 <body class="admin-locked">
   <!-- Full-Screen Admin Security Lock Screen (Solid 100% Opaque) -->
@@ -45,7 +70,7 @@
     </div>
   </div>
 
-  <div class="container" id="adminMainContent">
+  <div class="container" id="adminMainContent" style="display: none !important;">
     
     <!-- Header & Navigation -->
     <header class="header-bar">
