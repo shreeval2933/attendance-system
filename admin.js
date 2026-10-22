@@ -532,12 +532,21 @@ document.addEventListener("DOMContentLoaded", () => {
   const updateAdminPinBtn = document.getElementById("updateAdminPinBtn");
   const newAdminPinInput = document.getElementById("newAdminPinInput");
 
+  let isUnlocking = false;
+
   function handleUnlockAttempt() {
-    const entered = pinInput ? pinInput.value : "";
+    if (isUnlocking) return;
+    const entered = pinInput ? pinInput.value.trim() : "";
+    if (!entered) return;
+
     if (verifyAdminPin(entered)) {
+      isUnlocking = true;
       if (lockError) lockError.style.display = "none";
       unlockDashboard();
       showToast("Access Granted. Welcome, Teacher!");
+      setTimeout(() => {
+        isUnlocking = false;
+      }, 500);
     } else {
       if (lockError) {
         lockError.style.display = "block";
@@ -568,13 +577,6 @@ document.addEventListener("DOMContentLoaded", () => {
   if (pinInput) {
     pinInput.addEventListener("input", () => {
       if (lockError) lockError.style.display = "none";
-    });
-    pinInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        e.stopPropagation();
-        handleUnlockAttempt();
-      }
     });
   }
 
