@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Attendance – Teacher Admin Dashboard</title>
+  
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet CSS for Maps -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <!-- Main Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    
+    <!-- Header & Navigation -->
+    <header class="header-bar">
+      <div class="header-title-group">
+        <h1>Attendance – Teacher</h1>
+        <span class="brand-badge" id="firebaseModeBadge">Local Sync Mode</span>
+      </div>
+      
+      <div class="header-actions">
+        <a href="student.html" target="_blank" class="nav-link-btn" title="Open student check-in portal">
+          👤 Student Portal ↗
+        </a>
+        <button id="googleAuthBtn" class="btn btn-google">
+          <svg width="16" height="16" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.35 24 12 24z"/>
+            <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.14-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+            <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+          </svg>
+          <span id="authBtnText">Sign in with Google</span>
+        </button>
+        <span class="user-badge" id="teacherEmailBadge">m25cse021@iitj.ac.in</span>
+        <button id="settingsModalBtn" class="btn btn-neutral" style="padding: 6px 10px;" title="Firebase Setup">
+          ⚙️
+        </button>
+      </div>
+    </header>
+
+    <!-- Dynamic Session Status Alert Banner -->
+    <div id="sessionStatusBanner" class="status-banner closed">
+      <div id="statusBannerText">Session "Oct22_Lec" — CLOSED (time over)</div>
+      <div id="statusBannerTimer" class="timer-pill">00:00</div>
+    </div>
+
+    <!-- Section 1: Set up the session -->
+    <section class="card-section">
+      <h2 class="card-title">1. Set up the session (can be done days before)</h2>
+      
+      <div class="form-grid-4">
+        <div class="form-group">
+          <label class="form-label" for="sessionName">
+            Session name <span class="subtext">(letters, digits, - _)</span>
+          </label>
+          <input type="text" id="sessionName" class="form-input" value="Oct22_Lec" placeholder="e.g. Oct22_Lec">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="scheduledStart">
+            Scheduled start <span class="subtext">(leave blank to start manually)</span>
+          </label>
+          <input type="datetime-local" id="scheduledStart" class="form-input">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="openMinutes">
+            Open for (minutes)
+          </label>
+          <input type="number" id="openMinutes" class="form-input" value="15" min="1" max="1440" placeholder="e.g. 15, 30, 60">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="maxGpsError">
+            Max GPS error accepted (m)
+          </label>
+          <input type="number" id="maxGpsError" class="form-input" value="500" min="5" max="5000">
+        </div>
+      </div>
+
+      <!-- Collapsible Classroom Center Coordinates -->
+      <button type="button" id="toggleGeoEnforcement" class="collapsible-trigger">
+        <span id="toggleArrow">▶</span> Optional: class centre &amp; location enforcement
+      </button>
+
+      <div id="geoEnforcementContent" class="collapsible-content">
+        <div style="margin-bottom: 12px;">
+          <label style="display:inline-flex; align-items:center; gap:8px; font-size:0.88rem; font-weight:600; cursor:pointer;">
+            <input type="checkbox" id="enforceCenterCheckbox"> Enforce Classroom Radius Geofencing (Flag if outside radius)
+          </label>
+        </div>
+        <div class="form-grid-4" style="margin-bottom: 8px;">
+          <div class="form-group">
+            <label class="form-label" for="centerLat">Classroom Latitude</label>
+            <input type="number" id="centerLat" class="form-input" step="0.00001" placeholder="e.g. 26.47338" value="26.47338">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="centerLng">Classroom Longitude</label>
+            <input type="number" id="centerLng" class="form-input" step="0.00001" placeholder="e.g. 73.11728" value="73.11728">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="centerRadius">Enforcement Radius (m)</label>
+            <input type="number" id="centerRadius" class="form-input" value="150" placeholder="150">
+          </div>
+          <div class="form-group" style="justify-content: flex-end;">
+            <button type="button" id="useTeacherLocationBtn" class="btn btn-neutral" style="font-size: 0.8rem;">
+              📍 Use My Current Location
+            </button>
+          </div>
+        </div>
+        <div class="helper-caption">
+          Tip: Leave unchecked to only flag outliers based on the class median location. If enabled, click "Use My Current Location" while in class.
+        </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="btn-group">
+        <button id="saveSessionBtn" class="btn btn-primary">Save session</button>
+        <button id="startNowBtn" class="btn btn-success">Start now</button>
+        <button id="stopNowBtn" class="btn btn-danger">Stop now</button>
+        <button id="add5MinBtn" class="btn btn-neutral">+5 min</button>
+      </div>
+
+      <p class="helper-caption">
+        * "Save session" with a start time schedules it automatically. Without one, it's saved as ready and waits for you to press Start now. Stop and the auto-close time are enforced by the database.
+      </p>
+    </section>
+
+    <!-- Section 2: QR Code -->
+    <section class="card-section">
+      <h2 class="card-title">2. QR code (same every class, so you can print or paste it in slides)</h2>
+      
+      <div class="qr-container-box">
+        <div id="qrcode"></div>
+        <div class="qr-link-text">
+          <a id="qrDirectLink" href="#" target="_blank">https://attendance-system.web.app/student.html?session=Oct22_Lec</a>
+          <button id="copyLinkBtn" class="copy-badge-btn">Copy Link</button>
+          <button id="downloadQrBtn" class="copy-badge-btn" style="background:#eef2ff; color:#4338ca; border-color:#c7d2fe;">Download QR</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: Review submissions -->
+    <section class="card-section">
+      <h2 class="card-title">
+        3. Review: <span id="submissionCount">4</span> submissions
+      </h2>
+
+      <div class="review-controls-bar">
+        <div class="form-group" style="flex: 1; min-width: 200px;">
+          <label class="form-label" for="sessionToView">Session to view</label>
+          <input type="text" id="sessionToView" class="form-input" value="Oct22_Lec">
+        </div>
+
+        <div class="form-group" style="flex: 1; min-width: 250px;">
+          <label class="form-label" for="flagFartherThan">
+            Flag if farther than (m) from the class median location
+          </label>
+          <input type="number" id="flagFartherThan" class="form-input" value="150" min="10" max="5000">
+        </div>
+
+        <div class="btn-group" style="margin-top: 0; margin-bottom: 0;">
+          <button id="loadSessionBtn" class="btn btn-neutral">Load session</button>
+          <button id="downloadCsvBtn" class="btn btn-neutral">Download CSV</button>
+          <button id="clearSubmissionsBtn" class="btn btn-neutral" style="color:#dc2626;" title="Clear test submissions for this session">🗑️ Clear Records</button>
+        </div>
+      </div>
+
+      <!-- Map Display -->
+      <div id="adminMap"></div>
+
+      <!-- Submissions Table -->
+      <div class="table-responsive">
+        <table class="data-table" id="submissionsTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Time</th>
+              <th>Name</th>
+              <th>Roll / Affiliation</th>
+              <th>Email</th>
+              <th>From group (m)</th>
+              <th>From centre (m)</th>
+              <th>GPS acc (m)</th>
+              <th>Flag</th>
+              <th>Map</th>
+            </tr>
+          </thead>
+          <tbody id="submissionsTableBody">
+            <!-- Dynamically populated rows -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Firebase Settings / Help Modal -->
+  <div id="settingsModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:99999; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:12px; max-width:540px; width:92%; padding:24px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);">
+      <h3 style="margin-bottom:12px; font-size:1.2rem;">Firebase &amp; Environment Setup</h3>
+      <p style="font-size:0.86rem; color:#475569; margin-bottom:16px;">
+        This application includes seamless fallback simulation with real-time multi-tab sync, so you can test immediately without any keys. To connect your live Firebase project:
+      </p>
+      <ol style="font-size:0.84rem; color:#334155; padding-left:20px; line-height:1.6; margin-bottom:18px;">
+        <li>Create a project on the <a href="https://console.firebase.google.com" target="_blank" style="color:#2563eb;">Firebase Console</a>.</li>
+        <li>Enable <strong>Cloud Firestore</strong> in test mode.</li>
+        <li>Open <code>firebase-config.js</code> and replace the <code>firebaseConfig</code> keys with your web app credentials.</li>
+      </ol>
+      <div style="display:flex; justify-content:flex-end; gap:10px;">
+        <button id="closeSettingsModalBtn" class="btn btn-primary">Got it!</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Element -->
+  <div id="toastNotification" class="toast"></div>
+
+  <!-- Firebase Scripts (Compat for standalone CDN usage) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+
+  <!-- Leaflet JS for Map rendering -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- QRCode.js for dynamic QR rendering -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <!-- App Services & Scripts -->
+  <script src="firebase-config.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

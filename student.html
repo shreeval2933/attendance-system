@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student Attendance Check-In</title>
+  
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet CSS for Mini Location Preview -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <!-- Main Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body style="background-color: #f1f5f9; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 20px 16px;">
+  
+  <div class="container" style="max-width: 540px; margin: auto;">
+    
+    <!-- Student Check-in Card -->
+    <div class="student-card" id="studentFormCard">
+      <div class="student-card-header">
+        <div style="display:inline-flex; align-items:center; gap:8px; margin-bottom:8px;">
+          <span class="brand-badge">Student Check-In</span>
+          <span class="user-badge" id="sessionBadgeDisplay" style="font-weight:600; background:#e2e8f0;">Session: Oct22_Lec</span>
+        </div>
+        <h1>Class Attendance</h1>
+        <p id="sessionNoticeText">Please verify your details and location to mark attendance.</p>
+      </div>
+
+      <!-- Session State Banner if closed -->
+      <div id="studentSessionAlert" class="status-banner" style="display:none; margin-bottom:16px;">
+        <span id="studentSessionAlertText">Session Status</span>
+      </div>
+
+      <form id="attendanceForm">
+        <!-- 1. Full Name -->
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" for="studentName">Full Name *</label>
+          <input type="text" id="studentName" class="form-input" placeholder="e.g. Nishit Gupta" required>
+        </div>
+
+        <!-- 2. Email Address -->
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" for="studentEmail">Student / Institutional Email *</label>
+          <input type="email" id="studentEmail" class="form-input" placeholder="e.g. b25cm1034@iitj.ac.in" required>
+        </div>
+
+        <!-- 3. IIT Jodhpur Affiliation Checkbox -->
+        <label class="checkbox-card" for="isIitjCheck">
+          <input type="checkbox" id="isIitjCheck" checked>
+          <div class="checkbox-card-content">
+            <span class="checkbox-card-title">Are you from IIT Jodhpur?</span>
+            <span class="checkbox-card-sub">Check if you are a student, scholar, or faculty at IIT Jodhpur</span>
+          </div>
+        </label>
+
+        <!-- 3A. Conditional: If IIT Jodhpur (Checked) -> Enter Roll No -->
+        <div id="iitjRollContainer" class="form-group conditional-field-box" style="margin-bottom: 16px;">
+          <label class="form-label" for="studentRollNo">
+            IIT Jodhpur Roll No * <span class="subtext">(e.g. B25CM1034, M24CS001, P26CS0007)</span>
+          </label>
+          <input type="text" id="studentRollNo" class="form-input" placeholder="e.g. B25CM1034" required>
+        </div>
+
+        <!-- 3B. Conditional: If NOT IIT Jodhpur (Unchecked) -> Enter where from -->
+        <div id="otherAffiliationContainer" class="form-group conditional-field-box" style="margin-bottom: 16px; display: none;">
+          <label class="form-label" for="studentOtherAffiliation">
+            Where are you from? (College / University / Affiliation) *
+          </label>
+          <input type="text" id="studentOtherAffiliation" class="form-input" placeholder="e.g. External Institute, Company or Organization">
+        </div>
+
+        <!-- 4. Location Verification Box -->
+        <div class="gps-box">
+          <div class="gps-box-header">
+            <span style="font-size:0.85rem; font-weight:600; color:#334155;">📍 Geolocation Detection</span>
+            <span id="gpsStatusBadge" class="gps-status-badge acquiring">Acquiring GPS...</span>
+          </div>
+
+          <div class="gps-coords-display" id="gpsCoordsContainer">
+            <div>
+              <span>Latitude</span>
+              <strong id="displayLat">--.-----</strong>
+            </div>
+            <div>
+              <span>Longitude</span>
+              <strong id="displayLng">--.-----</strong>
+            </div>
+            <div>
+              <span>Accuracy</span>
+              <strong id="displayAcc">±-- m</strong>
+            </div>
+          </div>
+
+          <!-- Mini Leaflet Map Preview -->
+          <div id="studentMapPreview"></div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+            <span id="gpsQualityMsg" style="font-size:0.75rem; color:#64748b;">Waiting for GPS satellite fix...</span>
+            <button type="button" id="refreshGpsBtn" class="btn btn-neutral" style="padding:4px 10px; font-size:0.75rem;">
+              🔄 Retry GPS
+            </button>
+          </div>
+        </div>
+
+        <!-- Submit Button -->
+        <button type="submit" id="submitAttendanceBtn" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 1rem; border-radius: 8px;">
+          ✓ Submit Attendance
+        </button>
+
+        <p class="helper-caption" style="text-align:center; margin-top:12px;">
+          Your GPS position and device timestamp will be recorded for institutional attendance verification.
+        </p>
+      </form>
+    </div>
+
+    <!-- Success Confirmation Receipt (Hidden Initially) -->
+    <div class="student-card receipt-card" id="receiptCard">
+      <div class="success-check-icon">✓</div>
+      <h2 style="font-size:1.4rem; color:#0f172a; margin-bottom:6px;">Attendance Recorded!</h2>
+      <p style="font-size:0.86rem; color:#64748b;">Your attendance check-in has been successfully validated and synced.</p>
+
+      <div class="receipt-details">
+        <div class="receipt-row">
+          <span class="label">Session:</span>
+          <span class="val" id="recSession">Oct22_Lec</span>
+        </div>
+        <div class="receipt-row">
+          <span class="label">Student Name:</span>
+          <span class="val" id="recName">--</span>
+        </div>
+        <div class="receipt-row">
+          <span class="label">Email:</span>
+          <span class="val" id="recEmail">--</span>
+        </div>
+        <div class="receipt-row">
+          <span class="label">Affiliation:</span>
+          <span class="val" id="recAffiliation">--</span>
+        </div>
+        <div class="receipt-row">
+          <span class="label">GPS Accuracy:</span>
+          <span class="val" id="recGps">--</span>
+        </div>
+        <div class="receipt-row">
+          <span class="label">Timestamp:</span>
+          <span class="val" id="recTime">--</span>
+        </div>
+        <div class="receipt-row">
+          <span class="label">Verification ID:</span>
+          <span class="val" id="recId" style="font-family:monospace; font-size:0.78rem;">--</span>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:center; margin-top:16px;">
+        <button type="button" id="submitAnotherBtn" class="btn btn-primary" style="min-width: 160px; padding: 10px 24px;">✓ Done</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Toast Element -->
+  <div id="toastNotification" class="toast"></div>
+
+  <!-- Firebase Scripts (Compat CDN) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+
+  <!-- Leaflet JS for mini map -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- App Services & Logic -->
+  <script src="firebase-config.js"></script>
+  <script src="student.js"></script>
+</body>
+</html>

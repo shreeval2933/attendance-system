@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Sessions collection
+    match /sessions/{sessionId} {
+      // Anyone can read active session status for attendance validation
+      allow read: if true;
+      
+      // Teachers / Admins can create and update session configuration
+      allow write: if true; // In production with Firebase Auth, change to: request.auth != null
+      
+      // Submissions subcollection
+      match /submissions/{submissionId} {
+        // Teachers can view submissions
+        allow read: if true;
+        
+        // Students can submit attendance (create only)
+        allow create: if request.resource.data.email is string
+                      && request.resource.data.name is string
+                      && request.resource.data.lat is number
+                      && request.resource.data.lng is number;
+        
+        // Prevent tampering / edits to already submitted attendance records
+        allow update, delete: if false;
+      }
+    }
+  }
+}
