@@ -348,6 +348,20 @@ window.AttendanceDB = {
 
   // Record student attendance submission
   async submitAttendance(sessionId, studentData) {
+    // 1. Enforce that session is strictly open/active
+    const session = await this.getSession(sessionId);
+    if (!session) {
+      throw new Error(`Session "${sessionId}" does not exist.`);
+    }
+
+    const now = Date.now();
+    const isExpired = session.expiresAt && new Date(session.expiresAt).getTime() < now;
+    if (session.status !== "ACTIVE" || isExpired) {
+      throw new Error(`Session "${sessionId}" is CLOSED (time over). Attendance submissions cannot be accepted.`);
+    }
+
+    const deviceId = studentData.deviceId ? String(studentData.deviceId).trim() : "dev_unknown";
+
     const subRecord = {
       id: "sub_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
       sessionId: sessionId,
@@ -356,6 +370,7 @@ window.AttendanceDB = {
       affiliation: studentData.affiliation.trim(),
       rollNo: studentData.rollNo ? studentData.rollNo.trim() : "",
       isIitj: Boolean(studentData.isIitj),
+      deviceId: deviceId,
       lat: Number(studentData.lat),
       lng: Number(studentData.lng),
       accuracy: Number(studentData.accuracy),
@@ -364,7 +379,7 @@ window.AttendanceDB = {
     };
 
     if (isRealFirebase) {
-      // Check for duplicate submission with same email
+      // 2. Check for duplicate submission with same email in Firestore
       const dupQuery = await db.collection("sessions")
         .doc(sessionId)
         .collection("submissions")
@@ -375,14 +390,38 @@ window.AttendanceDB = {
         throw new Error("Attendance already submitted for this email in this session.");
       }
 
+      // 3. Enforce: One mobile/device only one user can submit
+      if (deviceId && deviceId !== "dev_unknown") {
+        const deviceQuery = await db.collection("sessions")
+          .doc(sessionId)
+          .collection("submissions")
+          .where("deviceId", "==", deviceId)
+          .get();
+
+        if (!deviceQuery.empty) {
+          throw new Error("Attendance has already been marked from this mobile phone / device. Only one attendance submission per device is allowed.");
+        }
+      }
+
       await db.collection("sessions").doc(sessionId).collection("submissions").doc(subRecord.id).set(subRecord);
       return subRecord;
     } else {
       const existing = getLocalSubmissions(sessionId);
-      const isDup = existing.some(item => item.email === subRecord.email);
-      if (isDup) {
+
+      // Check email duplicate
+      const isDupEmail = existing.some(item => item.email === subRecord.email);
+      if (isDupEmail) {
         throw new Error("Attendance already submitted for this email in this session.");
       }
+
+      // Check device duplicate
+      if (deviceId && deviceId !== "dev_unknown") {
+        const isDupDevice = existing.some(item => item.deviceId && item.deviceId === deviceId);
+        if (isDupDevice) {
+          throw new Error("Attendance has already been marked from this mobile phone / device. Only one attendance submission per device is allowed.");
+        }
+      }
+
       existing.unshift(subRecord);
       saveLocalSubmissions(sessionId, existing);
       if (syncChannel) syncChannel.postMessage({ type: "NEW_SUBMISSION", sessionId, submission: subRecord });

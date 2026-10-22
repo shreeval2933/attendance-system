@@ -15,8 +15,9 @@ service cloud.firestore {
         // Teachers can view submissions
         allow read: if true;
         
-        // Students can submit attendance (create only)
-        allow create: if request.resource.data.email is string
+        // Students can submit attendance (create only, and session MUST be ACTIVE)
+        allow create: if get(/databases/$(database)/documents/sessions/$(sessionId)).data.status == 'ACTIVE'
+                      && request.resource.data.email is string
                       && request.resource.data.name is string
                       && request.resource.data.lat is number
                       && request.resource.data.lng is number;

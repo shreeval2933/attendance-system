@@ -140,6 +140,18 @@ function requestGeolocation() {
   );
 }
 
+// Generate or retrieve persistent hardware device ID
+function getOrCreateDeviceId() {
+  let devId = localStorage.getItem("attendance_device_unique_id");
+  if (!devId) {
+    const screenData = `${window.screen.width}x${window.screen.height}_${window.navigator.hardwareConcurrency || 4}`;
+    const rand = Math.random().toString(36).substring(2, 12);
+    devId = `dev_${Date.now().toString(36)}_${rand}_${screenData}`;
+    localStorage.setItem("attendance_device_unique_id", devId);
+  }
+  return devId;
+}
+
 // Evaluate session status and update UI
 async function checkSessionStatus() {
   const urlSession = getQueryParam("session");
@@ -154,9 +166,21 @@ async function checkSessionStatus() {
 
   badgeEl.textContent = `Session: ${currentSessionName}`;
 
+  // Check if this mobile has already marked attendance for this session
+  const alreadyMarked = localStorage.getItem(`attendance_submitted_${currentSessionName}`);
+  if (alreadyMarked) {
+    alertEl.className = "status-banner closed";
+    alertEl.style.display = "flex";
+    alertText.textContent = `✓ Attendance has already been submitted from this device for Session "${currentSessionName}". Only 1 submission per mobile is permitted.`;
+    submitBtn.disabled = true;
+    submitBtn.style.opacity = "0.5";
+    submitBtn.style.cursor = "not-allowed";
+    submitBtn.textContent = "Attendance Already Marked";
+    return;
+  }
+
   currentSession = await window.AttendanceDB.getSession(currentSessionName);
   if (!currentSession) {
-    // Try to get any active session
     const active = await window.AttendanceDB.getActiveSession();
     if (active) {
       currentSession = active;
@@ -170,6 +194,8 @@ async function checkSessionStatus() {
     alertEl.style.display = "flex";
     alertText.textContent = `Session "${currentSessionName}" does not exist. Please check with your instructor.`;
     submitBtn.disabled = true;
+    submitBtn.style.opacity = "0.5";
+    submitBtn.style.cursor = "not-allowed";
     return;
   }
 
@@ -181,10 +207,11 @@ async function checkSessionStatus() {
   if (isClosed) {
     alertEl.className = "status-banner closed";
     alertEl.style.display = "flex";
-    alertText.textContent = `Session "${currentSessionName}" is CLOSED. Attendance submissions are no longer accepted.`;
+    alertText.textContent = `Session "${currentSessionName}" is CLOSED (time over). Submissions are not accepted.`;
     submitBtn.disabled = true;
-    submitBtn.style.opacity = "0.6";
+    submitBtn.style.opacity = "0.5";
     submitBtn.style.cursor = "not-allowed";
+    submitBtn.textContent = "Session Closed";
   } else {
     alertEl.className = "status-banner active";
     alertEl.style.display = "flex";
@@ -192,6 +219,7 @@ async function checkSessionStatus() {
     submitBtn.disabled = false;
     submitBtn.style.opacity = "1";
     submitBtn.style.cursor = "pointer";
+    submitBtn.textContent = "✓ Submit Attendance";
   }
 }
 
@@ -204,6 +232,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("refreshGpsBtn").addEventListener("click", () => {
     requestGeolocation();
   });
+
+  // Listen to live session changes from database
+  window.AttendanceDB.onSessionChange(currentSessionName, () => {
+    checkSessionStatus();
+  });
+
+  // Live countdown verification every 1 second to lock form as soon as session ends
+  setInterval(() => {
+    checkSessionStatus();
+  }, 1000);
 
   // Toggle IIT Jodhpur vs Other Affiliation
   const isIitjCheck = document.getElementById("isIitjCheck");
@@ -234,6 +272,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
+    // 1. Device check: Prevent multiple submissions from same mobile
+    if (localStorage.getItem(`attendance_submitted_${currentSessionName}`)) {
+      alert("⚠️ Attendance has already been submitted from this phone/device for this session. Only one submission per mobile is permitted.");
+      return;
+    }
+
+    // 2. Strict Session Closed Check right before submitting
+    const freshSession = await window.AttendanceDB.getSession(currentSessionName);
+    const now = Date.now();
+    const isExpired = freshSession && freshSession.expiresAt && new Date(freshSession.expiresAt).getTime() < now;
+    if (!freshSession || freshSession.status !== "ACTIVE" || isExpired) {
+      alert(`⛔ Submission Rejected: Session "${currentSessionName}" is CLOSED (time over). Attendance can no longer be recorded.`);
+      await checkSessionStatus();
+      return;
+    }
+
+    // 3. Location check
     if (!detectedLocation || typeof detectedLocation.lat !== "number" || typeof detectedLocation.lng !== "number") {
       alert("⚠️ Your GPS location has not been acquired. Location detection is mandatory to mark attendance. Please enable location permissions on your browser and click 'Retry GPS'.");
       return;
@@ -275,16 +330,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     submitBtn.textContent = "Submitting Attendance...";
 
     try {
+      const deviceId = getOrCreateDeviceId();
+
       const record = await window.AttendanceDB.submitAttendance(currentSessionName, {
         name: name,
         email: email,
         affiliation: affiliation,
         rollNo: rollNo,
         isIitj: isIitj,
+        deviceId: deviceId,
         lat: detectedLocation.lat,
         lng: detectedLocation.lng,
         accuracy: detectedLocation.accuracy
       });
+
+      // Lock this device for this session
+      localStorage.setItem(`attendance_submitted_${currentSessionName}`, record.id);
+      localStorage.setItem(`attendance_submitted_email_${currentSessionName}`, record.email);
 
       // Show receipt card
       document.getElementById("studentFormCard").style.display = "none";
