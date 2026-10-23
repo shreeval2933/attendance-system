@@ -165,7 +165,24 @@
 
     <!-- Section 1: Set up the session -->
     <section class="card-section">
-      <h2 class="card-title">1. Set up the session (can be done days before)</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+        <h2 class="card-title" style="margin-bottom:0;">1. Set up the session (can be done days before)</h2>
+      </div>
+
+      <!-- Persistent Session Selector Bar -->
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px; background:#f8fafc; padding:10px 14px; border-radius:8px; border:1px solid #e2e8f0;">
+        <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:260px;">
+          <label style="font-size:0.86rem; font-weight:700; color:#1e293b; white-space:nowrap;" for="sessionDropdown">
+            📁 Saved Sessions:
+          </label>
+          <select id="sessionDropdown" class="form-input" style="padding:6px 12px; font-size:0.86rem; font-weight:500; background:#ffffff;">
+            <!-- Dynamically populated from Firestore & LocalStorage -->
+          </select>
+        </div>
+        <button type="button" id="createNewSessionBtn" class="btn btn-neutral" style="padding:6px 14px; font-size:0.82rem; font-weight:600;">
+          ➕ New Session
+        </button>
+      </div>
       
       <div class="form-grid-4">
         <div class="form-group">
@@ -230,7 +247,6 @@
         <div class="helper-caption">
           Tip: Leave unchecked to only flag outliers based on the class median location. If enabled, click "Use My Current Location" while in class.
         </div>
-        </div>
       </div>
 
       <!-- Action Buttons -->
@@ -267,9 +283,11 @@
       </h2>
 
       <div class="review-controls-bar">
-        <div class="form-group" style="flex: 1; min-width: 200px;">
-          <label class="form-label" for="sessionToView">Session to view</label>
-          <input type="text" id="sessionToView" class="form-input" value="Oct22_Lec">
+        <div class="form-group" style="flex: 1; min-width: 220px;">
+          <label class="form-label" for="sessionToViewDropdown">Session to view</label>
+          <select id="sessionToViewDropdown" class="form-input">
+            <!-- Dynamically populated from saved sessions -->
+          </select>
         </div>
 
         <div class="form-group" style="flex: 1; min-width: 250px;">
@@ -280,9 +298,11 @@
         </div>
 
         <div class="btn-group" style="margin-top: 0; margin-bottom: 0;">
-          <button id="loadSessionBtn" class="btn btn-neutral">Load session</button>
+          <button id="loadSessionBtn" class="btn btn-neutral">Reload</button>
           <button id="downloadCsvBtn" class="btn btn-neutral">Download CSV</button>
           <button id="clearSubmissionsBtn" class="btn btn-neutral" style="color:#dc2626;" title="Clear test submissions for this session">🗑️ Clear Records</button>
+        </div>
+      </div>
         </div>
       </div>
 

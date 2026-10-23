@@ -2,7 +2,7 @@
 // Teacher Admin Dashboard Logic
 // ============================================================================
 
-let currentSessionName = "Oct22_Lec";
+let currentSessionName = localStorage.getItem("attendance_last_session_name") || "Oct22_Lec";
 let currentSession = null;
 let map = null;
 let markersLayer = null;
@@ -350,11 +350,145 @@ function updateSessionStatusUI(session) {
   }
 }
 
-// Load a session by name and listen to changes
-async function loadSessionData(sessionName) {
+// Refresh Session Dropdowns from persistent storage
+async function refreshSessionDropdowns(selectedSessionName) {
+  try {
+    const allSessions = await window.AttendanceDB.getAllSessions();
+    const dropdown1 = document.getElementById("sessionDropdown");
+    const dropdown2 = document.getElementById("sessionToViewDropdown");
+
+    const list = Object.values(allSessions);
+    list.sort((a, b) => {
+      if (a.status === "ACTIVE" && b.status !== "ACTIVE") return -1;
+      if (b.status === "ACTIVE" && a.status !== "ACTIVE") return 1;
+      const tA = new Date(a.updatedAt || a.startedAt || a.createdAt || 0).getTime();
+      const tB = new Date(b.updatedAt || b.startedAt || b.createdAt || 0).getTime();
+      return tB - tA;
+    });
+
+    function populateSelect(selectEl) {
+      if (!selectEl) return;
+      selectEl.innerHTML = "";
+
+      let hasMatch = false;
+      list.forEach((s) => {
+        const opt = document.createElement("option");
+        opt.value = s.name;
+        const count = s.submissionCount !== undefined ? s.submissionCount : 0;
+        const statusLabel = s.status || "READY";
+        opt.textContent = `${s.name} (${statusLabel} · ${count} student${count === 1 ? '' : 's'})`;
+        if (s.name === selectedSessionName) {
+          opt.selected = true;
+          hasMatch = true;
+        }
+        selectEl.appendChild(opt);
+      });
+
+      // If the selected session wasn't in the list (e.g. brand new skeleton), add it
+      if (selectedSessionName && !hasMatch && selectedSessionName !== "__NEW_SESSION__") {
+        const opt = document.createElement("option");
+        opt.value = selectedSessionName;
+        opt.textContent = `${selectedSessionName} (Current)`;
+        opt.selected = true;
+        selectEl.insertBefore(opt, selectEl.firstChild);
+      }
+
+      // Add create new option
+      const newOpt = document.createElement("option");
+      newOpt.value = "__NEW_SESSION__";
+      newOpt.textContent = "➕ [Create New Session...]";
+      selectEl.appendChild(newOpt);
+    }
+
+    populateSelect(dropdown1);
+    populateSelect(dropdown2);
+  } catch (err) {
+    console.warn("Error refreshing session dropdowns:", err);
+  }
+}
+
+// UI helper to prepare creating a brand new session
+function createNewSessionUI() {
+  const now = new Date();
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const dateStr = `${monthNames[now.getMonth()]}${now.getDate()}_Lec`;
+  
+  const sInput = document.getElementById("sessionName");
+  if (sInput) {
+    sInput.value = dateStr;
+    sInput.focus();
+    sInput.select();
+  }
+
+  const dd1 = document.getElementById("sessionDropdown");
+  if (dd1) dd1.value = "__NEW_SESSION__";
+
+  showToast(`Enter your new session name and click "Start now" or "Save session"`);
+}
+
+// Initialize Dashboard Sessions upon unlock
+async function initDashboardSessions() {
+  try {
+    const allSessions = await window.AttendanceDB.getAllSessions();
+    const urlSession = new URLSearchParams(window.location.search).get("session");
+    let target = null;
+
+    if (urlSession && allSessions[urlSession]) {
+      target = urlSession;
+    } else {
+      // 1. Check if there's any active session running
+      const active = Object.values(allSessions).find((s) => s.status === "ACTIVE");
+      if (active) {
+        target = active.name;
+      } else {
+        // 2. Check last viewed session from persistent storage
+        const savedLast = localStorage.getItem("attendance_last_session_name");
+        if (savedLast && allSessions[savedLast]) {
+          target = savedLast;
+        } else {
+          // 3. Most recently updated/created session
+          const sorted = Object.values(allSessions).sort((a, b) => {
+            const tA = new Date(a.updatedAt || a.startedAt || a.createdAt || 0).getTime();
+            const tB = new Date(b.updatedAt || b.startedAt || b.createdAt || 0).getTime();
+            return tB - tA;
+          });
+          if (sorted.length > 0) {
+            target = sorted[0].name;
+          } else {
+            target = "Oct22_Lec";
+          }
+        }
+      }
+    }
+
+    currentSessionName = target;
+    await refreshSessionDropdowns(target);
+    await loadSessionData(target, true);
+  } catch (err) {
+    console.error("Error in initDashboardSessions:", err);
+    await loadSessionData(currentSessionName, true);
+  }
+}
+
+// Load a session by name and listen to changes (Full Dual Persistence)
+async function loadSessionData(sessionName, skipDropdown = false) {
+  if (!sessionName || sessionName === "__NEW_SESSION__") return;
   currentSessionName = sessionName.trim();
-  document.getElementById("sessionName").value = currentSessionName;
-  document.getElementById("sessionToView").value = currentSessionName;
+
+  // Persist last opened session name
+  try {
+    localStorage.setItem("attendance_last_session_name", currentSessionName);
+  } catch (e) {}
+
+  const sInput = document.getElementById("sessionName");
+  if (sInput) sInput.value = currentSessionName;
+
+  if (!skipDropdown) {
+    const dd1 = document.getElementById("sessionDropdown");
+    const dd2 = document.getElementById("sessionToViewDropdown");
+    if (dd1 && dd1.value !== currentSessionName) dd1.value = currentSessionName;
+    if (dd2 && dd2.value !== currentSessionName) dd2.value = currentSessionName;
+  }
 
   // Unsubscribe old listeners
   if (unsubscribeSubmissions) unsubscribeSubmissions();
@@ -364,12 +498,14 @@ async function loadSessionData(sessionName) {
 
   let session = await window.AttendanceDB.getSession(currentSessionName);
   if (!session) {
-    // Create new skeleton session if not found
+    // Create skeleton session if not found
     session = {
       name: currentSessionName,
       openMinutes: 15,
-      maxGpsError: 200,
+      maxGpsError: 500,
       centerRadius: 150,
+      centerLat: 26.47338,
+      centerLng: 73.11728,
       status: "READY"
     };
   }
@@ -421,6 +557,18 @@ async function loadSessionData(sessionName) {
   // Subscribe to live submissions updates
   unsubscribeSubmissions = window.AttendanceDB.onSubmissionsChange(currentSessionName, (submissions) => {
     renderSubmissions(submissions, session);
+    // Keep submission count updated in session dropdowns
+    const dd1 = document.getElementById("sessionDropdown");
+    const dd2 = document.getElementById("sessionToViewDropdown");
+    [dd1, dd2].forEach((sel) => {
+      if (sel) {
+        const opt = sel.querySelector(`option[value="${currentSessionName}"]`);
+        if (opt) {
+          const statusText = (currentSession && currentSession.status) || "READY";
+          opt.textContent = `${currentSessionName} (${statusText} · ${submissions.length} student${submissions.length === 1 ? '' : 's'})`;
+        }
+      }
+    });
   });
 }
 
@@ -617,16 +765,16 @@ function unlockDashboard() {
     const modeBadge = document.getElementById("firebaseModeBadge");
     if (modeBadge) {
       if (window.AttendanceDB && window.AttendanceDB.isConfigured()) {
-        modeBadge.textContent = "Firebase Live";
+        modeBadge.textContent = "Persistent (Cloud + Cache)";
         modeBadge.style.background = "#dcfce7";
         modeBadge.style.color = "#15803d";
         modeBadge.style.borderColor = "#86efac";
       } else {
-        modeBadge.textContent = "Local Multi-Tab Sync";
+        modeBadge.textContent = "Persistent (Local Storage)";
       }
     }
 
-    loadSessionData(currentSessionName).catch((err) => {
+    initDashboardSessions().catch((err) => {
       console.error("Error loading session data:", err);
     });
   } else if (map) {
@@ -741,6 +889,39 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Session Dropdowns & New Session Button
+  const sDropdown = document.getElementById("sessionDropdown");
+  const sViewDropdown = document.getElementById("sessionToViewDropdown");
+  const newSessionBtn = document.getElementById("createNewSessionBtn");
+
+  if (sDropdown) {
+    sDropdown.addEventListener("change", (e) => {
+      if (e.target.value === "__NEW_SESSION__") {
+        createNewSessionUI();
+      } else if (e.target.value) {
+        loadSessionData(e.target.value);
+        showToast(`Loaded session: ${e.target.value}`);
+      }
+    });
+  }
+
+  if (sViewDropdown) {
+    sViewDropdown.addEventListener("change", (e) => {
+      if (e.target.value === "__NEW_SESSION__") {
+        createNewSessionUI();
+      } else if (e.target.value) {
+        loadSessionData(e.target.value);
+        showToast(`Loaded session: ${e.target.value}`);
+      }
+    });
+  }
+
+  if (newSessionBtn) {
+    newSessionBtn.addEventListener("click", () => {
+      createNewSessionUI();
+    });
+  }
+
   // Toggle collapsible location enforcement
   const toggleBtn = document.getElementById("toggleGeoEnforcement");
   const toggleArrow = document.getElementById("toggleArrow");
@@ -779,12 +960,8 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       await window.AttendanceDB.saveSession(payload);
       showToast(`Session "${sName}" saved (${mins} mins duration)!`);
-      if (sName !== currentSessionName) {
-        await loadSessionData(sName);
-      } else {
-        const session = await window.AttendanceDB.getSession(currentSessionName);
-        renderSubmissions(currentSubmissions, session);
-      }
+      await refreshSessionDropdowns(sName);
+      await loadSessionData(sName);
     } catch (e) {
       alert("Failed to save session: " + e.message);
     }
@@ -810,6 +987,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       await window.AttendanceDB.startSession(sName, mins);
       showToast(`Session "${sName}" is now ACTIVE for ${mins} minutes!`);
+      await refreshSessionDropdowns(sName);
       await loadSessionData(sName);
     } catch (e) {
       alert("Error starting session: " + e.message);
@@ -822,6 +1000,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       await window.AttendanceDB.stopSession(sName);
       showToast(`Session "${sName}" CLOSED.`);
+      await refreshSessionDropdowns(sName);
       await loadSessionData(sName);
     } catch (e) {
       alert("Error stopping session: " + e.message);
@@ -834,18 +1013,20 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       await window.AttendanceDB.extendSession(sName, 5);
       showToast(`Extended "${sName}" by +5 minutes!`);
+      await refreshSessionDropdowns(sName);
       await loadSessionData(sName);
     } catch (e) {
       alert("Error extending session: " + e.message);
     }
   });
 
-  // Action Button: Load session
+  // Action Button: Reload session
   document.getElementById("loadSessionBtn").addEventListener("click", () => {
-    const sName = document.getElementById("sessionToView").value.trim();
-    if (sName) {
+    const sel = document.getElementById("sessionToViewDropdown");
+    const sName = (sel && sel.value) || currentSessionName;
+    if (sName && sName !== "__NEW_SESSION__") {
       loadSessionData(sName);
-      showToast(`Loaded session: ${sName}`);
+      showToast(`Reloaded session: ${sName}`);
     }
   });
 
@@ -857,6 +1038,7 @@ document.addEventListener("DOMContentLoaded", () => {
         currentSubmissions = [];
         const session = await window.AttendanceDB.getSession(currentSessionName);
         renderSubmissions([], session);
+        await refreshSessionDropdowns(currentSessionName);
         showToast("Cleared all records for this session!");
       } catch (e) {
         alert("Failed to clear submissions: " + e.message);

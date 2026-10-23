@@ -43,6 +43,17 @@ try {
     auth = firebase.auth();
     isRealFirebase = true;
     console.log("Connected to live Firebase Firestore!");
+
+    // Enable offline persistence in Firestore
+    if (typeof db.enablePersistence === "function") {
+      db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
+        if (err.code === "failed-precondition") {
+          console.warn("Firestore persistence active in another tab");
+        } else if (err.code === "unimplemented") {
+          console.warn("Browser does not support Firestore persistence");
+        }
+      });
+    }
   } else {
     console.log("Running in offline/local simulation mode (Local storage & Realtime BroadcastChannel)");
   }
@@ -54,7 +65,7 @@ try {
 const syncChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("attendance_sync_channel") : null;
 
 // ============================================================================
-// Local Storage Simulation Engine
+// Local Storage Simulation Engine & Persistent Cache
 // ============================================================================
 const STORAGE_SESSIONS_KEY = "attendance_system_sessions";
 const STORAGE_SUBMISSIONS_KEY = "attendance_system_submissions";
@@ -69,7 +80,11 @@ function getLocalSessions() {
 }
 
 function saveLocalSessions(sessions) {
-  localStorage.setItem(STORAGE_SESSIONS_KEY, JSON.stringify(sessions));
+  try {
+    localStorage.setItem(STORAGE_SESSIONS_KEY, JSON.stringify(sessions));
+  } catch (e) {
+    console.warn("Failed to write sessions to localStorage:", e);
+  }
 }
 
 function getLocalSubmissions(sessionId) {
@@ -82,90 +97,113 @@ function getLocalSubmissions(sessionId) {
 }
 
 function saveLocalSubmissions(sessionId, submissions) {
-  localStorage.setItem(`${STORAGE_SUBMISSIONS_KEY}_${sessionId}`, JSON.stringify(submissions));
+  try {
+    localStorage.setItem(`${STORAGE_SUBMISSIONS_KEY}_${sessionId}`, JSON.stringify(submissions));
+    // Also update submission count in local session object
+    const sessions = getLocalSessions();
+    if (sessions[sessionId]) {
+      sessions[sessionId].submissionCount = submissions.length;
+      saveLocalSessions(sessions);
+    }
+  } catch (e) {
+    console.warn("Failed to write submissions to localStorage:", e);
+  }
 }
 
 // Initialize seed session if storage is empty
 (function seedDefaultSession() {
   const sessions = getLocalSessions();
-  if (Object.keys(sessions).length === 0) {
-    const defaultSession = {
-      name: "Oct22_Lec",
-      scheduledStart: "",
-      openMinutes: 15,
-      maxGpsError: 500, // Generous default tolerance for laptop/WiFi testing
-      enforceCenter: true,
-      centerLat: 26.47338,
-      centerLng: 73.11728,
-      centerRadius: 150,
-      status: "ACTIVE", // ACTIVE, CLOSED, READY
-      createdAt: new Date().toISOString(),
-      startedAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString()
-    };
+  const sampleSubmissions = [
+    {
+      id: "sub_1",
+      sessionId: "Oct22_Lec",
+      name: "Nishit Gupta (B25CM1034)",
+      email: "b25cm1034@iitj.ac.in",
+      affiliation: "B25CM1034",
+      lat: 26.28483,
+      lng: 73.02984,
+      accuracy: 12,
+      timestamp: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
+      distanceFromCenter: 4,
+      distanceFromGroup: 4,
+      flagged: false
+    },
+    {
+      id: "sub_2",
+      sessionId: "Oct22_Lec",
+      name: "Aarav Sharma",
+      email: "b25cs1002@iitj.ac.in",
+      affiliation: "B25CS1002",
+      lat: 26.28487,
+      lng: 73.02989,
+      accuracy: 15,
+      timestamp: new Date(Date.now() - 7 * 60 * 1000).toISOString(),
+      distanceFromCenter: 9,
+      distanceFromGroup: 6,
+      flagged: false
+    },
+    {
+      id: "sub_3",
+      sessionId: "Oct22_Lec",
+      name: "Priya Patel",
+      email: "b25ee1021@iitj.ac.in",
+      affiliation: "B25EE1021",
+      lat: 26.28510,
+      lng: 73.03010,
+      accuracy: 18,
+      timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      distanceFromCenter: 42,
+      distanceFromGroup: 38,
+      flagged: false
+    },
+    {
+      id: "sub_4",
+      sessionId: "Oct22_Lec",
+      name: "Rohan Varma (Remote/Proxy)",
+      email: "b25me1055@iitj.ac.in",
+      affiliation: "B25ME1055",
+      lat: 26.28750,
+      lng: 73.03250,
+      accuracy: 25,
+      timestamp: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
+      distanceFromCenter: 380,
+      distanceFromGroup: 375,
+      flagged: true
+    }
+  ];
+
+  const defaultSession = {
+    name: "Oct22_Lec",
+    scheduledStart: "",
+    openMinutes: 15,
+    maxGpsError: 500,
+    enforceCenter: true,
+    centerLat: 26.47338,
+    centerLng: 73.11728,
+    centerRadius: 150,
+    status: "CLOSED",
+    createdAt: new Date().toISOString(),
+    startedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+    expiresAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+    submissionCount: sampleSubmissions.length
+  };
+
+  if (Object.keys(sessions).length === 0 || !sessions["Oct22_Lec"]) {
     sessions["Oct22_Lec"] = defaultSession;
     saveLocalSessions(sessions);
-
-    // Add a few realistic sample submissions matching the reference screenshot
-    const sampleSubmissions = [
-      {
-        id: "sub_1",
-        sessionId: "Oct22_Lec",
-        name: "Nishit Gupta (B25CM1034)",
-        email: "b25cm1034@iitj.ac.in",
-        affiliation: "B25CM1034",
-        lat: 26.28483,
-        lng: 73.02984,
-        accuracy: 12,
-        timestamp: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
-        distanceFromCenter: 4,
-        distanceFromGroup: 4,
-        flagged: false
-      },
-      {
-        id: "sub_2",
-        sessionId: "Oct22_Lec",
-        name: "Aarav Sharma",
-        email: "b25cs1002@iitj.ac.in",
-        affiliation: "B25CS1002",
-        lat: 26.28487,
-        lng: 73.02989,
-        accuracy: 15,
-        timestamp: new Date(Date.now() - 7 * 60 * 1000).toISOString(),
-        distanceFromCenter: 9,
-        distanceFromGroup: 6,
-        flagged: false
-      },
-      {
-        id: "sub_3",
-        sessionId: "Oct22_Lec",
-        name: "Priya Patel",
-        email: "b25ee1021@iitj.ac.in",
-        affiliation: "B25EE1021",
-        lat: 26.28510,
-        lng: 73.03010,
-        accuracy: 18,
-        timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-        distanceFromCenter: 42,
-        distanceFromGroup: 38,
-        flagged: false
-      },
-      {
-        id: "sub_4",
-        sessionId: "Oct22_Lec",
-        name: "Rohan Varma (Remote/Proxy)",
-        email: "b25me1055@iitj.ac.in",
-        affiliation: "B25ME1055",
-        lat: 26.28750, // Far away (hostel / off-campus)
-        lng: 73.03250,
-        accuracy: 25,
-        timestamp: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
-        distanceFromCenter: 380,
-        distanceFromGroup: 375,
-        flagged: true
-      }
-    ];
     saveLocalSubmissions("Oct22_Lec", sampleSubmissions);
+  }
+
+  // Also seed into Firestore if Firestore is active and empty
+  if (isRealFirebase && db) {
+    db.collection("sessions").doc("Oct22_Lec").get().then((doc) => {
+      if (!doc.exists) {
+        db.collection("sessions").doc("Oct22_Lec").set(defaultSession).catch(console.warn);
+        sampleSubmissions.forEach(sub => {
+          db.collection("sessions").doc("Oct22_Lec").collection("submissions").doc(sub.id).set(sub).catch(console.warn);
+        });
+      }
+    }).catch(console.warn);
   }
 })();
 
@@ -177,82 +215,122 @@ window.AttendanceDB = {
     return isRealFirebase;
   },
 
-  // Save or update session details
+  // Get all sessions from both Cloud Firestore & LocalStorage (merged & persistent)
+  async getAllSessions() {
+    const sessions = getLocalSessions();
+
+    if (isRealFirebase && db) {
+      try {
+        const snapshot = await db.collection("sessions").get();
+        snapshot.docs.forEach((doc) => {
+          const cloudData = doc.data();
+          const key = doc.id;
+          sessions[key] = {
+            ...(sessions[key] || {}),
+            ...cloudData
+          };
+        });
+        saveLocalSessions(sessions);
+      } catch (err) {
+        console.warn("Could not fetch cloud sessions, using local cache:", err);
+      }
+    }
+
+    // Attach submission counts for each session
+    Object.keys(sessions).forEach((key) => {
+      const localSubs = getLocalSubmissions(key);
+      if (localSubs && localSubs.length > 0) {
+        sessions[key].submissionCount = localSubs.length;
+      } else if (sessions[key].submissionCount === undefined) {
+        sessions[key].submissionCount = 0;
+      }
+    });
+
+    return sessions;
+  },
+
+  // Save or update session details across Cloud and LocalStorage
   async saveSession(sessionData) {
     if (!sessionData.name) throw new Error("Session name is required");
     const sessionKey = sessionData.name.trim();
     const openMins = parseInt(sessionData.openMinutes, 10) || 15;
 
-    if (isRealFirebase) {
-      const doc = await db.collection("sessions").doc(sessionKey).get();
-      const existing = doc.exists ? doc.data() : {};
-      
-      // If currently active and duration changed, update expiresAt accordingly
-      if (existing.status === "ACTIVE" && existing.startedAt) {
-        sessionData.expiresAt = new Date(new Date(existing.startedAt).getTime() + openMins * 60 * 1000).toISOString();
-      }
-      sessionData.openMinutes = openMins;
+    // 1. Immediately persist to LocalStorage
+    const sessions = getLocalSessions();
+    const existing = sessions[sessionKey] || {};
 
-      await db.collection("sessions").doc(sessionKey).set(sessionData, { merge: true });
-      return sessionData;
-    } else {
-      const sessions = getLocalSessions();
-      const existing = sessions[sessionKey] || {};
-
-      let newExpiresAt = existing.expiresAt;
-      if (existing.status === "ACTIVE" && existing.startedAt) {
-        newExpiresAt = new Date(new Date(existing.startedAt).getTime() + openMins * 60 * 1000).toISOString();
-      }
-
-      sessions[sessionKey] = {
-        ...existing,
-        ...sessionData,
-        openMinutes: openMins,
-        expiresAt: newExpiresAt,
-        updatedAt: new Date().toISOString()
-      };
-      saveLocalSessions(sessions);
-      if (syncChannel) syncChannel.postMessage({ type: "SESSION_UPDATED", sessionName: sessionKey });
-      return sessions[sessionKey];
+    let newExpiresAt = existing.expiresAt;
+    if (existing.status === "ACTIVE" && existing.startedAt) {
+      newExpiresAt = new Date(new Date(existing.startedAt).getTime() + openMins * 60 * 1000).toISOString();
     }
+
+    const merged = {
+      ...existing,
+      ...sessionData,
+      openMinutes: openMins,
+      expiresAt: newExpiresAt,
+      updatedAt: new Date().toISOString()
+    };
+    sessions[sessionKey] = merged;
+    saveLocalSessions(sessions);
+    try {
+      localStorage.setItem("attendance_last_session_name", sessionKey);
+    } catch (e) {}
+
+    // 2. Persist to Cloud Firestore if connected
+    if (isRealFirebase && db) {
+      try {
+        await db.collection("sessions").doc(sessionKey).set(merged, { merge: true });
+      } catch (err) {
+        console.warn("Cloud session save deferred / offline:", err);
+      }
+    }
+
+    if (syncChannel) syncChannel.postMessage({ type: "SESSION_UPDATED", sessionName: sessionKey });
+    return merged;
   },
 
-  // Get single session by name
+  // Get single session by name (Cache-first with live cloud sync)
   async getSession(sessionName) {
     if (!sessionName) return null;
     const key = sessionName.trim();
+    const sessions = getLocalSessions();
+    let local = sessions[key] || null;
 
-    if (isRealFirebase) {
-      const doc = await db.collection("sessions").doc(key).get();
-      return doc.exists ? doc.data() : null;
-    } else {
-      const sessions = getLocalSessions();
-      return sessions[key] || null;
+    if (isRealFirebase && db) {
+      try {
+        const doc = await db.collection("sessions").doc(key).get();
+        if (doc.exists) {
+          const cloudData = doc.data();
+          local = { ...(local || {}), ...cloudData };
+          sessions[key] = local;
+          saveLocalSessions(sessions);
+        }
+      } catch (err) {
+        console.warn("Firestore getSession fallback to local cache:", err);
+      }
     }
+
+    return local;
   },
 
   // Get active session (or most recently updated session)
   async getActiveSession() {
-    if (isRealFirebase) {
-      const snapshot = await db.collection("sessions")
-        .where("status", "==", "ACTIVE")
-        .limit(1)
-        .get();
-      if (!snapshot.empty) return snapshot.docs[0].data();
+    const all = await this.getAllSessions();
+    const list = Object.values(all);
 
-      // Fallback to latest
-      const latestSnapshot = await db.collection("sessions")
-        .orderBy("createdAt", "desc")
-        .limit(1)
-        .get();
-      return !latestSnapshot.empty ? latestSnapshot.docs[0].data() : null;
-    } else {
-      const sessions = getLocalSessions();
-      const all = Object.values(sessions);
-      const active = all.find(s => s.status === "ACTIVE");
-      if (active) return active;
-      return all.length > 0 ? all[all.length - 1] : null;
-    }
+    // First check for any ACTIVE session
+    const active = list.find((s) => s.status === "ACTIVE");
+    if (active) return active;
+
+    // Fallback to most recently updated / created
+    list.sort((a, b) => {
+      const tA = new Date(a.updatedAt || a.startedAt || a.createdAt || 0).getTime();
+      const tB = new Date(b.updatedAt || b.startedAt || b.createdAt || 0).getTime();
+      return tB - tA;
+    });
+
+    return list.length > 0 ? list[0] : null;
   },
 
   // Start session now
@@ -266,53 +344,80 @@ window.AttendanceDB = {
       status: "ACTIVE",
       startedAt: now.toISOString(),
       expiresAt: expiresAt.toISOString(),
-      openMinutes: mins
+      openMinutes: mins,
+      updatedAt: now.toISOString()
     };
 
-    if (isRealFirebase) {
-      await db.collection("sessions").doc(sessionName).set(update, { merge: true });
-    } else {
-      const sessions = getLocalSessions();
-      sessions[sessionName] = {
-        ...(sessions[sessionName] || {}),
-        ...update
-      };
-      saveLocalSessions(sessions);
-      if (syncChannel) syncChannel.postMessage({ type: "SESSION_UPDATED", sessionName });
+    // 1. LocalStorage
+    const sessions = getLocalSessions();
+    sessions[sessionName] = {
+      ...(sessions[sessionName] || {}),
+      ...update
+    };
+    saveLocalSessions(sessions);
+    try {
+      localStorage.setItem("attendance_last_session_name", sessionName);
+    } catch (e) {}
+
+    // 2. Firestore
+    if (isRealFirebase && db) {
+      try {
+        await db.collection("sessions").doc(sessionName).set(update, { merge: true });
+      } catch (err) {
+        console.warn("Cloud startSession deferred / offline:", err);
+      }
     }
+
+    if (syncChannel) syncChannel.postMessage({ type: "SESSION_UPDATED", sessionName });
     return update;
   },
 
   // Clear all submissions for a session
   async clearSubmissions(sessionId) {
-    if (isRealFirebase) {
-      const snapshot = await db.collection("sessions").doc(sessionId).collection("submissions").get();
-      const batch = db.batch();
-      snapshot.docs.forEach(d => batch.delete(d.ref));
-      await batch.commit();
-    } else {
-      saveLocalSubmissions(sessionId, []);
-      if (syncChannel) syncChannel.postMessage({ type: "NEW_SUBMISSION", sessionId });
+    saveLocalSubmissions(sessionId, []);
+    const sessions = getLocalSessions();
+    if (sessions[sessionId]) {
+      sessions[sessionId].submissionCount = 0;
+      saveLocalSessions(sessions);
     }
+
+    if (isRealFirebase && db) {
+      try {
+        const snapshot = await db.collection("sessions").doc(sessionId).collection("submissions").get();
+        const batch = db.batch();
+        snapshot.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      } catch (err) {
+        console.warn("Cloud clearSubmissions error:", err);
+      }
+    }
+
+    if (syncChannel) syncChannel.postMessage({ type: "NEW_SUBMISSION", sessionId });
   },
 
   // Stop session
   async stopSession(sessionName) {
     const update = {
       status: "CLOSED",
-      closedAt: new Date().toISOString()
+      closedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
 
-    if (isRealFirebase) {
-      await db.collection("sessions").doc(sessionName).update(update);
-    } else {
-      const sessions = getLocalSessions();
-      if (sessions[sessionName]) {
-        sessions[sessionName] = { ...sessions[sessionName], ...update };
-        saveLocalSessions(sessions);
-        if (syncChannel) syncChannel.postMessage({ type: "SESSION_UPDATED", sessionName });
+    const sessions = getLocalSessions();
+    if (sessions[sessionName]) {
+      sessions[sessionName] = { ...sessions[sessionName], ...update };
+      saveLocalSessions(sessions);
+    }
+
+    if (isRealFirebase && db) {
+      try {
+        await db.collection("sessions").doc(sessionName).set(update, { merge: true });
+      } catch (err) {
+        console.warn("Cloud stopSession error:", err);
       }
     }
+
+    if (syncChannel) syncChannel.postMessage({ type: "SESSION_UPDATED", sessionName });
     return update;
   },
 
@@ -330,23 +435,29 @@ window.AttendanceDB = {
     const update = {
       status: "ACTIVE",
       expiresAt: newExpiry.toISOString(),
-      openMinutes: (session.openMinutes || 15) + extraMinutes
+      openMinutes: (session.openMinutes || 15) + extraMinutes,
+      updatedAt: new Date().toISOString()
     };
 
-    if (isRealFirebase) {
-      await db.collection("sessions").doc(sessionName).update(update);
-    } else {
-      const sessions = getLocalSessions();
-      if (sessions[sessionName]) {
-        sessions[sessionName] = { ...sessions[sessionName], ...update };
-        saveLocalSessions(sessions);
-        if (syncChannel) syncChannel.postMessage({ type: "SESSION_UPDATED", sessionName });
+    const sessions = getLocalSessions();
+    if (sessions[sessionName]) {
+      sessions[sessionName] = { ...sessions[sessionName], ...update };
+      saveLocalSessions(sessions);
+    }
+
+    if (isRealFirebase && db) {
+      try {
+        await db.collection("sessions").doc(sessionName).set(update, { merge: true });
+      } catch (err) {
+        console.warn("Cloud extendSession error:", err);
       }
     }
+
+    if (syncChannel) syncChannel.postMessage({ type: "SESSION_UPDATED", sessionName });
     return update;
   },
 
-  // Record student attendance submission
+  // Record student attendance submission (Dual Cloud & Local Storage)
   async submitAttendance(sessionId, studentData) {
     // 1. Enforce that session is strictly open/active
     const session = await this.getSession(sessionId);
@@ -378,117 +489,175 @@ window.AttendanceDB = {
       userAgent: navigator.userAgent
     };
 
-    if (isRealFirebase) {
-      // 2. Check for duplicate submission with same email in Firestore
-      const dupQuery = await db.collection("sessions")
-        .doc(sessionId)
-        .collection("submissions")
-        .where("email", "==", subRecord.email)
-        .get();
-
-      if (!dupQuery.empty) {
-        throw new Error("Attendance already submitted for this email in this session.");
+    // Check duplicate in local storage first
+    const localExisting = getLocalSubmissions(sessionId);
+    const isDupEmail = localExisting.some((item) => item.email === subRecord.email);
+    if (isDupEmail) {
+      throw new Error("Attendance already submitted for this email in this session.");
+    }
+    if (deviceId && deviceId !== "dev_unknown") {
+      const isDupDevice = localExisting.some((item) => item.deviceId && item.deviceId === deviceId);
+      if (isDupDevice) {
+        throw new Error("Attendance has already been marked from this mobile phone / device. Only one attendance submission per device is allowed.");
       }
+    }
 
-      // 3. Enforce: One mobile/device only one user can submit
-      if (deviceId && deviceId !== "dev_unknown") {
-        const deviceQuery = await db.collection("sessions")
+    // Check duplicate in Firestore if connected
+    if (isRealFirebase && db) {
+      try {
+        const dupQuery = await db.collection("sessions")
           .doc(sessionId)
           .collection("submissions")
-          .where("deviceId", "==", deviceId)
+          .where("email", "==", subRecord.email)
           .get();
-
-        if (!deviceQuery.empty) {
-          throw new Error("Attendance has already been marked from this mobile phone / device. Only one attendance submission per device is allowed.");
+        if (!dupQuery.empty) {
+          throw new Error("Attendance already submitted for this email in this session.");
         }
-      }
 
-      await db.collection("sessions").doc(sessionId).collection("submissions").doc(subRecord.id).set(subRecord);
-      return subRecord;
-    } else {
-      const existing = getLocalSubmissions(sessionId);
-
-      // Check email duplicate
-      const isDupEmail = existing.some(item => item.email === subRecord.email);
-      if (isDupEmail) {
-        throw new Error("Attendance already submitted for this email in this session.");
-      }
-
-      // Check device duplicate
-      if (deviceId && deviceId !== "dev_unknown") {
-        const isDupDevice = existing.some(item => item.deviceId && item.deviceId === deviceId);
-        if (isDupDevice) {
-          throw new Error("Attendance has already been marked from this mobile phone / device. Only one attendance submission per device is allowed.");
+        if (deviceId && deviceId !== "dev_unknown") {
+          const devQuery = await db.collection("sessions")
+            .doc(sessionId)
+            .collection("submissions")
+            .where("deviceId", "==", deviceId)
+            .get();
+          if (!devQuery.empty) {
+            throw new Error("Attendance has already been marked from this mobile phone / device. Only one attendance submission per device is allowed.");
+          }
         }
-      }
 
-      existing.unshift(subRecord);
-      saveLocalSubmissions(sessionId, existing);
-      if (syncChannel) syncChannel.postMessage({ type: "NEW_SUBMISSION", sessionId, submission: subRecord });
-      return subRecord;
+        await db.collection("sessions").doc(sessionId).collection("submissions").doc(subRecord.id).set(subRecord);
+      } catch (err) {
+        if (err.message && err.message.includes("already")) throw err;
+        console.warn("Cloud attendance write deferred / offline:", err);
+      }
     }
+
+    // Save to local cache
+    localExisting.unshift(subRecord);
+    saveLocalSubmissions(sessionId, localExisting);
+
+    if (syncChannel) syncChannel.postMessage({ type: "NEW_SUBMISSION", sessionId, submission: subRecord });
+    return subRecord;
   },
 
-  // Fetch all submissions for a session
+  // Fetch all submissions for a session (merged and cached)
   async getSubmissions(sessionId) {
-    if (isRealFirebase) {
-      const snapshot = await db.collection("sessions")
-        .doc(sessionId)
-        .collection("submissions")
-        .orderBy("timestamp", "desc")
-        .get();
-      return snapshot.docs.map(doc => doc.data());
-    } else {
-      return getLocalSubmissions(sessionId);
+    const local = getLocalSubmissions(sessionId);
+
+    if (isRealFirebase && db) {
+      try {
+        const snapshot = await db.collection("sessions")
+          .doc(sessionId)
+          .collection("submissions")
+          .orderBy("timestamp", "desc")
+          .get();
+
+        if (!snapshot.empty) {
+          const cloudSubs = snapshot.docs.map((doc) => doc.data());
+          // Merge deduplicating by id and email
+          const subMap = new Map();
+          cloudSubs.forEach((s) => subMap.set(s.id || s.email, s));
+          local.forEach((s) => {
+            const key = s.id || s.email;
+            if (!subMap.has(key)) subMap.set(key, s);
+          });
+          const merged = Array.from(subMap.values());
+          saveLocalSubmissions(sessionId, merged);
+          return merged;
+        }
+      } catch (err) {
+        console.warn("Firestore getSubmissions fallback to local cache:", err);
+      }
     }
+
+    return local;
   },
 
   // Listen for real-time changes to submissions
   onSubmissionsChange(sessionId, callback) {
-    if (isRealFirebase) {
-      return db.collection("sessions")
-        .doc(sessionId)
-        .collection("submissions")
-        .orderBy("timestamp", "desc")
-        .onSnapshot(snapshot => {
-          const list = snapshot.docs.map(doc => doc.data());
-          callback(list);
-        }, err => console.error("Firestore listener error:", err));
-    } else {
-      // In local mode, immediately trigger callback, then listen to BroadcastChannel or storage events
-      callback(getLocalSubmissions(sessionId));
+    // 1. Immediately provide cached submissions
+    callback(getLocalSubmissions(sessionId));
 
-      const handler = (e) => {
-        if (e.data && (e.data.type === "NEW_SUBMISSION" || e.data.type === "SESSION_UPDATED")) {
+    let unsubscribeFirestore = null;
+    if (isRealFirebase && db) {
+      try {
+        unsubscribeFirestore = db.collection("sessions")
+          .doc(sessionId)
+          .collection("submissions")
+          .orderBy("timestamp", "desc")
+          .onSnapshot((snapshot) => {
+            const list = snapshot.docs.map((doc) => doc.data());
+            // Sync with local cache
+            if (list.length > 0) {
+              const local = getLocalSubmissions(sessionId);
+              const map = new Map();
+              list.forEach((s) => map.set(s.id || s.email, s));
+              local.forEach((s) => {
+                const key = s.id || s.email;
+                if (!map.has(key)) map.set(key, s);
+              });
+              const merged = Array.from(map.values());
+              saveLocalSubmissions(sessionId, merged);
+              callback(merged);
+            } else {
+              callback(getLocalSubmissions(sessionId));
+            }
+          }, (err) => console.warn("Firestore submissions listener notice:", err));
+      } catch (e) {
+        console.warn("Firestore onSubmissionsChange listener setup notice:", e);
+      }
+    }
+
+    const handler = (e) => {
+      if (e.data && (e.data.type === "NEW_SUBMISSION" || e.data.type === "SESSION_UPDATED")) {
+        if (!e.data.sessionId || e.data.sessionId === sessionId) {
           callback(getLocalSubmissions(sessionId));
         }
-      };
-      if (syncChannel) syncChannel.addEventListener("message", handler);
+      }
+    };
+    if (syncChannel) syncChannel.addEventListener("message", handler);
 
-      // Return cleanup unsubscribe function
-      return () => {
-        if (syncChannel) syncChannel.removeEventListener("message", handler);
-      };
-    }
+    return () => {
+      if (unsubscribeFirestore) unsubscribeFirestore();
+      if (syncChannel) syncChannel.removeEventListener("message", handler);
+    };
   },
 
   // Listen for real-time changes to a session's state
   onSessionChange(sessionId, callback) {
-    if (isRealFirebase) {
-      return db.collection("sessions").doc(sessionId).onSnapshot(doc => {
-        if (doc.exists) callback(doc.data());
-      });
-    } else {
-      this.getSession(sessionId).then(sess => { if (sess) callback(sess); });
-      const handler = (e) => {
-        if (e.data && e.data.type === "SESSION_UPDATED" && e.data.sessionName === sessionId) {
-          this.getSession(sessionId).then(sess => { if (sess) callback(sess); });
-        }
-      };
-      if (syncChannel) syncChannel.addEventListener("message", handler);
-      return () => {
-        if (syncChannel) syncChannel.removeEventListener("message", handler);
-      };
+    this.getSession(sessionId).then((sess) => {
+      if (sess) callback(sess);
+    });
+
+    let unsubscribeFirestore = null;
+    if (isRealFirebase && db) {
+      try {
+        unsubscribeFirestore = db.collection("sessions").doc(sessionId).onSnapshot((doc) => {
+          if (doc.exists) {
+            const data = doc.data();
+            const sessions = getLocalSessions();
+            sessions[sessionId] = { ...(sessions[sessionId] || {}), ...data };
+            saveLocalSessions(sessions);
+            callback(sessions[sessionId]);
+          }
+        }, (err) => console.warn("Firestore session listener notice:", err));
+      } catch (e) {
+        console.warn("Firestore onSessionChange listener setup notice:", e);
+      }
     }
+
+    const handler = (e) => {
+      if (e.data && e.data.type === "SESSION_UPDATED" && (!e.data.sessionName || e.data.sessionName === sessionId)) {
+        this.getSession(sessionId).then((sess) => {
+          if (sess) callback(sess);
+        });
+      }
+    };
+    if (syncChannel) syncChannel.addEventListener("message", handler);
+
+    return () => {
+      if (unsubscribeFirestore) unsubscribeFirestore();
+      if (syncChannel) syncChannel.removeEventListener("message", handler);
+    };
   }
 };
